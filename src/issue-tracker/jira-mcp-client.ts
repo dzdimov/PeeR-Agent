@@ -195,7 +195,7 @@ export class JiraMcpClient implements IssueTrackerProvider {
         });
         // Parse and normalize results
         if (Array.isArray(result)) {
-          return result.map((r) => this.normalizeTicket(r));
+          return result.map((r) => this.normalizeTicket(r as JiraApiIssue));
         }
       } else {
         // Direct JQL search
@@ -204,7 +204,7 @@ export class JiraMcpClient implements IssueTrackerProvider {
           `/rest/api/3/search?jql=${encodeURIComponent(jql)}&maxResults=${limit}`
         );
         if (response.ok) {
-          const data = await response.json();
+          const data = await response.json() as { issues?: JiraApiIssue[] };
           return (data.issues || []).map((issue: JiraApiIssue) =>
             this.normalizeTicket(issue)
           );
@@ -225,13 +225,21 @@ export class JiraMcpClient implements IssueTrackerProvider {
         `/rest/api/3/issue/${ticketKey}/comment`
       );
       if (response.ok) {
-        const data = await response.json();
-        return (data.comments || []).map((c: JiraApiComment) => ({
-          id: c.id,
-          author: c.author?.displayName || 'Unknown',
-          body: c.body?.content?.[0]?.content?.[0]?.text || c.body || '',
-          createdAt: c.created,
-        }));
+        const data = await response.json() as { comments?: JiraApiComment[] };
+        return (data.comments || []).map((c: JiraApiComment) => {
+          let bodyText = '';
+          if (typeof c.body === 'string') {
+            bodyText = c.body;
+          } else if (c.body && typeof c.body === 'object' && 'content' in c.body) {
+            bodyText = c.body.content?.[0]?.content?.[0]?.text || '';
+          }
+          return {
+            id: c.id,
+            author: c.author?.displayName || 'Unknown',
+            body: bodyText,
+            createdAt: c.created,
+          };
+        });
       }
     } catch (error) {
       console.error(`Failed to get comments for ${ticketKey}:`, error);
@@ -302,7 +310,7 @@ export class JiraMcpClient implements IssueTrackerProvider {
     // Direct API fetch
     const response = await this.fetchJiraApi(`/rest/api/3/issue/${key}?expand=renderedFields`);
     if (response.ok) {
-      return response.json();
+      return response.json() as Promise<JiraApiIssue>;
     }
     return null;
   }
@@ -353,6 +361,9 @@ export class JiraMcpClient implements IssueTrackerProvider {
         a.mimeType?.includes('svg')
     );
 
+    // Extract epic key - handle custom field which may be string or undefined
+    const epicKey = fields.epic?.key || (fields.customfield_10014 as string | undefined);
+
     return {
       id: raw.id,
       key: raw.key,
@@ -376,12 +387,12 @@ export class JiraMcpClient implements IssueTrackerProvider {
       hasDiagrams,
       attachmentCount: attachments.length,
       parentKey: fields.parent?.key,
-      epicKey: fields.epic?.key || fields.customfield_10014, // Common epic link field
+      epicKey,
       linkedIssues,
       subtasks,
       createdAt: fields.created || '',
       updatedAt: fields.updated || '',
-      rawData: raw,
+      rawData: raw as unknown as Record<string, unknown>,
     };
   }
 
@@ -429,7 +440,14 @@ export class JiraMcpClient implements IssueTrackerProvider {
     if (this.config.acceptanceCriteriaField) {
       const customField = fields[this.config.acceptanceCriteriaField];
       if (customField) {
-        const text = typeof customField === 'string' ? customField : this.adfToText(customField);
+        let text: string;
+        if (typeof customField === 'string') {
+          text = customField;
+        } else if (typeof customField === 'object' && customField !== null && 'type' in customField && 'version' in customField) {
+          text = this.adfToText(customField as JiraAdfDocument);
+        } else {
+          text = '';
+        }
         return { text, list: this.parseAcceptanceCriteriaList(text) };
       }
     }

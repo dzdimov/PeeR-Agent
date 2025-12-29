@@ -7,6 +7,8 @@ import { loadUserConfig, getApiKey } from '../utils/config-loader.js';
 import { archDocsExists } from '../../utils/arch-docs-parser.js';
 import { resolveDefaultBranch } from '../../utils/branch-resolver.js';
 import { ConfigurationError, GitHubAPIError, GitError } from '../../utils/errors.js';
+import { createPeerReviewIntegration, formatPeerReviewOutput, } from '../../issue-tracker/index.js';
+import { ProviderFactory } from '../../providers/index.js';
 /**
  * Determine which files should be skipped during analysis
  */
@@ -232,6 +234,7 @@ export async function analyzePR(options = {}) {
         }
         const provider = (options.provider || config.ai?.provider || 'anthropic').toLowerCase();
         const apiKey = getApiKey(provider, config);
+        const model = options.model || config.ai?.model;
         if (!apiKey) {
             spinner.fail('No API key found');
             console.error(chalk.yellow('💡  Please set it in one of these ways:'));
@@ -345,7 +348,6 @@ export async function analyzePR(options = {}) {
         else if (options.archDocs && !hasArchDocs) {
             console.log(chalk.yellow('⚠️  --arch-docs flag specified but no .arch-docs folder found\n'));
         }
-        const model = options.model || config.ai?.model;
         const agent = new PRAnalyzerAgent({
             provider: provider,
             apiKey,
@@ -357,6 +359,16 @@ export async function analyzePR(options = {}) {
         });
         // Display results
         displayAgentResults(result, mode, options.verbose || false);
+        // Run Peer Review if enabled (via flag or config)
+        const peerReviewEnabled = options.peerReview || config.peerReview?.enabled;
+        if (peerReviewEnabled) {
+            // Pass the same provider config to peer review so it uses the same LLM
+            await runPeerReview(config, diff, title, result, options.verbose || false, {
+                provider,
+                apiKey,
+                model,
+            });
+        }
     }
     catch (error) {
         spinner.fail('Analysis failed');
@@ -543,5 +555,114 @@ function displayAgentResults(result, mode, verbose) {
         console.log(chalk.gray(`\nTotal tokens used: ${result.totalTokensUsed.toLocaleString()}`));
     }
     console.log(chalk.gray('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'));
+}
+/**
+ * Run Peer Review analysis against linked Jira tickets
+ *
+ * This extends the PR analysis with business context validation:
+ * - Fetches linked Jira tickets from PR title/branch
+ * - Rates ticket quality
+ * - Validates implementation against derived requirements
+ * - Provides senior-dev style verdict
+ */
+async function runPeerReview(config, diff, title, prAnalysisResult, verbose, providerOptions) {
+    const spinner = ora('Running Peer Review analysis...').start();
+    try {
+        // Create LLM using the same provider as main analysis
+        const llm = ProviderFactory.createChatModel({
+            provider: providerOptions.provider,
+            apiKey: providerOptions.apiKey,
+            model: providerOptions.model,
+            temperature: 0.2,
+            maxTokens: 4000,
+        });
+        // Create peer review integration from config, passing the LLM
+        const peerReviewConfig = config.peerReview || {};
+        const integration = createPeerReviewIntegration(peerReviewConfig, llm);
+        if (!integration.isEnabled()) {
+            spinner.warn('Peer Review enabled but not configured. Add Jira settings to config.');
+            console.log(chalk.gray('   Run: pr-agent config --set peerReview.instanceUrl=https://your.atlassian.net'));
+            console.log(chalk.gray('   Or configure MCP: peerReview.useMcp=true'));
+            return;
+        }
+        // Get branch name for ticket extraction
+        let branchName;
+        try {
+            branchName = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
+        }
+        catch {
+            // Ignore - branch name is optional
+        }
+        // Get commit messages for ticket extraction
+        let commitMessages = [];
+        try {
+            const commits = execSync('git log --oneline -10', { encoding: 'utf-8' });
+            commitMessages = commits.trim().split('\n');
+        }
+        catch {
+            // Ignore
+        }
+        // Parse diff to get file info
+        const files = parseDiffFiles(diff);
+        spinner.text = 'Extracting ticket references...';
+        // Run peer review analysis
+        const result = await integration.analyze({
+            prTitle: title || 'Untitled PR',
+            prDescription: undefined, // Could extract from git commit body
+            branchName,
+            commitMessages,
+            diff,
+            files,
+            prSummary: prAnalysisResult.summary,
+            prRisks: prAnalysisResult.overallRisks,
+            prComplexity: prAnalysisResult.overallComplexity,
+        });
+        spinner.succeed('Peer Review analysis complete');
+        // Display peer review results
+        const output = formatPeerReviewOutput(result);
+        if (output) {
+            console.log(output);
+        }
+        if (verbose && result.ticketReferences.length > 0) {
+            console.log(chalk.gray('Ticket references found:'));
+            result.ticketReferences.forEach((ref) => {
+                console.log(chalk.gray(`  - ${ref.key} (from ${ref.source}, confidence: ${ref.confidence}%)`));
+            });
+        }
+    }
+    catch (error) {
+        spinner.fail('Peer Review analysis failed');
+        console.error(chalk.yellow(`⚠️  ${error.message || 'Unknown error'}`));
+        console.log(chalk.gray('   The main PR analysis completed successfully.'));
+        console.log(chalk.gray('   Peer Review is an optional enhancement - check Jira configuration.'));
+    }
+}
+/**
+ * Parse diff to extract file information
+ */
+function parseDiffFiles(diff) {
+    const files = [];
+    const filePattern = /^diff --git a\/(.+?) b\/(.+?)$/gm;
+    let match;
+    while ((match = filePattern.exec(diff)) !== null) {
+        const filePath = match[2] !== '/dev/null' ? match[2] : match[1];
+        const isNew = match[1] === '/dev/null' || match[1].startsWith('dev/null');
+        const isDeleted = match[2] === '/dev/null';
+        // Count additions and deletions (simplified)
+        const fileStart = match.index;
+        const nextFileMatch = filePattern.exec(diff);
+        const fileEnd = nextFileMatch ? nextFileMatch.index : diff.length;
+        filePattern.lastIndex = match.index + 1; // Reset to continue from after current match
+        const fileContent = diff.substring(fileStart, fileEnd);
+        const additions = (fileContent.match(/^\+[^+]/gm) || []).length;
+        const deletions = (fileContent.match(/^-[^-]/gm) || []).length;
+        files.push({
+            path: filePath,
+            additions,
+            deletions,
+            status: isNew ? 'added' : isDeleted ? 'deleted' : 'modified',
+        });
+    }
+    return files;
 }
 //# sourceMappingURL=analyze.command.js.map

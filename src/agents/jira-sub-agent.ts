@@ -17,7 +17,7 @@
  */
 
 import { ChatPromptTemplate } from '@langchain/core/prompts';
-import { StructuredOutputParser } from 'langchain/output_parsers';
+import { StructuredOutputParser } from '@langchain/core/output_parsers';
 import { z } from 'zod';
 import { IssueTicket } from '../types/issue-tracker.types.js';
 import { BaseLanguageModel } from '@langchain/core/language_models/base';

@@ -188,7 +188,7 @@ export class PeerReviewIntegration {
 
     switch (this.config.provider) {
       case 'jira':
-        this.provider = new JiraMcpClient(this.config.providerConfig as JiraConfig);
+        this.provider = new JiraMcpClient(this.config.providerConfig as unknown as JiraConfig);
         break;
 
       // Future providers

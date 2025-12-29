@@ -12,6 +12,7 @@ import {
   formatPeerReviewOutput,
   type PeerReviewResult,
 } from '../../issue-tracker/index.js';
+import { ProviderFactory, type SupportedProvider } from '../../providers/index.js';
 
 interface AnalyzeOptions {
   diff?: string;
@@ -267,15 +268,16 @@ export async function analyzePR(options: AnalyzeOptions = {}): Promise<void> {
       }
       throw error;
     }
-    
+
     // Get provider and API key from config or environment
     if (options.verbose) {
       console.log(chalk.gray(`   Debug: options.provider: ${options.provider || 'undefined'}`));
       console.log(chalk.gray(`   Debug: config.ai?.provider: ${config.ai?.provider || 'undefined'}`));
     }
-    const provider = (options.provider || config.ai?.provider || 'anthropic').toLowerCase() as 'anthropic' | 'openai' | 'google';
+    const provider = (options.provider || config.ai?.provider || 'anthropic').toLowerCase() as SupportedProvider;
     const apiKey = getApiKey(provider, config);
-    
+    const model = options.model || config.ai?.model;
+
     if (!apiKey) {
       spinner.fail('No API key found');
       console.error(chalk.yellow('💡  Please set it in one of these ways:'));
@@ -286,7 +288,7 @@ export async function analyzePR(options: AnalyzeOptions = {}): Promise<void> {
       console.error(chalk.gray('      - Google (Gemini): export GOOGLE_API_KEY="your-api-key"'));
       process.exit(1);
     }
-    
+
     spinner.succeed(`Using AI provider: ${provider}`);
 
     // Resolve default branch if needed
@@ -299,13 +301,13 @@ export async function analyzePR(options: AnalyzeOptions = {}): Promise<void> {
           githubToken: process.env.GITHUB_TOKEN,
           fallbackToGit: true,
         });
-        
+
         defaultBranch = branchResult.branch;
-        
+
         if (branchResult.warning && options.verbose) {
           console.log(chalk.yellow(`\n⚠️  ${branchResult.warning}`));
         }
-        
+
         if (options.verbose) {
           console.log(chalk.gray(`   Using branch: ${defaultBranch} (source: ${branchResult.source})`));
         }
@@ -396,16 +398,15 @@ export async function analyzePR(options: AnalyzeOptions = {}): Promise<void> {
     // Check for arch-docs
     const useArchDocs = options.archDocs !== false; // Default to true if not specified
     const hasArchDocs = archDocsExists();
-    
+
     if (useArchDocs && hasArchDocs) {
       console.log(chalk.cyan('📚 Architecture documentation detected - including in analysis\n'));
     } else if (options.archDocs && !hasArchDocs) {
       console.log(chalk.yellow('⚠️  --arch-docs flag specified but no .arch-docs folder found\n'));
     }
 
-    const model = options.model || config.ai?.model;
     const agent = new PRAnalyzerAgent({
-      provider: provider as any,
+      provider: provider,
       apiKey,
       model,
     });
@@ -420,11 +421,16 @@ export async function analyzePR(options: AnalyzeOptions = {}): Promise<void> {
     // Run Peer Review if enabled (via flag or config)
     const peerReviewEnabled = options.peerReview || config.peerReview?.enabled;
     if (peerReviewEnabled) {
-      await runPeerReview(config, diff, title, result, options.verbose || false);
+      // Pass the same provider config to peer review so it uses the same LLM
+      await runPeerReview(config, diff, title, result, options.verbose || false, {
+        provider,
+        apiKey,
+        model,
+      });
     }
   } catch (error: any) {
     spinner.fail('Analysis failed');
-    
+
     // Handle specific error types with user-friendly messages
     if (error instanceof ConfigurationError) {
       console.error(chalk.red(`\n❌ Configuration Error: ${error.message}`));
@@ -453,7 +459,7 @@ export async function analyzePR(options: AnalyzeOptions = {}): Promise<void> {
         .replace(/sk-[a-zA-Z0-9_-]+/g, 'sk-***')
         .replace(/ghp_[a-zA-Z0-9]+/g, 'ghp_***')
         .substring(0, 500); // Limit length
-      
+
       console.error(chalk.red(`\n❌  Error: ${sanitizedMessage}`));
       if (options.verbose && error.stack) {
         console.error(chalk.gray('\nStack trace:'));
@@ -591,10 +597,10 @@ function displayAgentResults(result: any, mode: AnalysisMode, verbose: boolean):
   if (result.archDocsImpact?.used) {
     console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
     console.log(chalk.blue.bold('\n📚 Architecture Documentation Impact\n'));
-    
+
     console.log(chalk.white(`Documents analyzed: ${result.archDocsImpact.docsAvailable}`));
     console.log(chalk.white(`Relevant sections used: ${result.archDocsImpact.sectionsUsed}\n`));
-    
+
     if (result.archDocsImpact.influencedStages.length > 0) {
       console.log(chalk.cyan('Stages influenced by arch-docs:'));
       result.archDocsImpact.influencedStages.forEach((stage: string) => {
@@ -607,7 +613,7 @@ function displayAgentResults(result: any, mode: AnalysisMode, verbose: boolean):
       });
       console.log('');
     }
-    
+
     if (result.archDocsImpact.keyInsights.length > 0) {
       console.log(chalk.cyan('Key insights from arch-docs integration:\n'));
       result.archDocsImpact.keyInsights.forEach((insight: string, i: number) => {
@@ -638,14 +644,24 @@ async function runPeerReview(
   diff: string,
   title: string | undefined,
   prAnalysisResult: any,
-  verbose: boolean
+  verbose: boolean,
+  providerOptions: { provider: SupportedProvider; apiKey: string; model?: string }
 ): Promise<void> {
   const spinner = ora('Running Peer Review analysis...').start();
 
   try {
-    // Create peer review integration from config
+    // Create LLM using the same provider as main analysis
+    const llm = ProviderFactory.createChatModel({
+      provider: providerOptions.provider,
+      apiKey: providerOptions.apiKey,
+      model: providerOptions.model,
+      temperature: 0.2,
+      maxTokens: 4000,
+    });
+
+    // Create peer review integration from config, passing the LLM
     const peerReviewConfig = config.peerReview || {};
-    const integration = createPeerReviewIntegration(peerReviewConfig);
+    const integration = createPeerReviewIntegration(peerReviewConfig, llm);
 
     if (!integration.isEnabled()) {
       spinner.warn('Peer Review enabled but not configured. Add Jira settings to config.');
