@@ -7,6 +7,11 @@ import { loadUserConfig, getApiKey } from '../utils/config-loader.js';
 import { archDocsExists } from '../../utils/arch-docs-parser.js';
 import { resolveDefaultBranch } from '../../utils/branch-resolver.js';
 import { ConfigurationError, GitHubAPIError, GitError } from '../../utils/errors.js';
+import {
+  createPeerReviewIntegration,
+  formatPeerReviewOutput,
+  type PeerReviewResult,
+} from '../../issue-tracker/index.js';
 
 interface AnalyzeOptions {
   diff?: string;
@@ -24,6 +29,7 @@ interface AnalyzeOptions {
   verbose?: boolean;
   maxCost?: number;
   archDocs?: boolean;
+  peerReview?: boolean; // Enable Jira peer review integration
 }
 
 interface AnalysisMode {
@@ -410,6 +416,12 @@ export async function analyzePR(options: AnalyzeOptions = {}): Promise<void> {
 
     // Display results
     displayAgentResults(result, mode, options.verbose || false);
+
+    // Run Peer Review if enabled (via flag or config)
+    const peerReviewEnabled = options.peerReview || config.peerReview?.enabled;
+    if (peerReviewEnabled) {
+      await runPeerReview(config, diff, title, result, options.verbose || false);
+    }
   } catch (error: any) {
     spinner.fail('Analysis failed');
     
@@ -612,4 +624,134 @@ function displayAgentResults(result: any, mode: AnalysisMode, verbose: boolean):
   console.log(chalk.gray('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'));
 }
 
+/**
+ * Run Peer Review analysis against linked Jira tickets
+ *
+ * This extends the PR analysis with business context validation:
+ * - Fetches linked Jira tickets from PR title/branch
+ * - Rates ticket quality
+ * - Validates implementation against derived requirements
+ * - Provides senior-dev style verdict
+ */
+async function runPeerReview(
+  config: any,
+  diff: string,
+  title: string | undefined,
+  prAnalysisResult: any,
+  verbose: boolean
+): Promise<void> {
+  const spinner = ora('Running Peer Review analysis...').start();
 
+  try {
+    // Create peer review integration from config
+    const peerReviewConfig = config.peerReview || {};
+    const integration = createPeerReviewIntegration(peerReviewConfig);
+
+    if (!integration.isEnabled()) {
+      spinner.warn('Peer Review enabled but not configured. Add Jira settings to config.');
+      console.log(chalk.gray('   Run: pr-agent config --set peerReview.instanceUrl=https://your.atlassian.net'));
+      console.log(chalk.gray('   Or configure MCP: peerReview.useMcp=true'));
+      return;
+    }
+
+    // Get branch name for ticket extraction
+    let branchName: string | undefined;
+    try {
+      branchName = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
+    } catch {
+      // Ignore - branch name is optional
+    }
+
+    // Get commit messages for ticket extraction
+    let commitMessages: string[] = [];
+    try {
+      const commits = execSync('git log --oneline -10', { encoding: 'utf-8' });
+      commitMessages = commits.trim().split('\n');
+    } catch {
+      // Ignore
+    }
+
+    // Parse diff to get file info
+    const files = parseDiffFiles(diff);
+
+    spinner.text = 'Extracting ticket references...';
+
+    // Run peer review analysis
+    const result = await integration.analyze({
+      prTitle: title || 'Untitled PR',
+      prDescription: undefined, // Could extract from git commit body
+      branchName,
+      commitMessages,
+      diff,
+      files,
+      prSummary: prAnalysisResult.summary,
+      prRisks: prAnalysisResult.overallRisks,
+      prComplexity: prAnalysisResult.overallComplexity,
+    });
+
+    spinner.succeed('Peer Review analysis complete');
+
+    // Display peer review results
+    const output = formatPeerReviewOutput(result);
+    if (output) {
+      console.log(output);
+    }
+
+    if (verbose && result.ticketReferences.length > 0) {
+      console.log(chalk.gray('Ticket references found:'));
+      result.ticketReferences.forEach((ref) => {
+        console.log(chalk.gray(`  - ${ref.key} (from ${ref.source}, confidence: ${ref.confidence}%)`));
+      });
+    }
+  } catch (error: any) {
+    spinner.fail('Peer Review analysis failed');
+    console.error(chalk.yellow(`⚠️  ${error.message || 'Unknown error'}`));
+    console.log(chalk.gray('   The main PR analysis completed successfully.'));
+    console.log(chalk.gray('   Peer Review is an optional enhancement - check Jira configuration.'));
+  }
+}
+
+/**
+ * Parse diff to extract file information
+ */
+function parseDiffFiles(diff: string): Array<{
+  path: string;
+  additions: number;
+  deletions: number;
+  status: string;
+}> {
+  const files: Array<{
+    path: string;
+    additions: number;
+    deletions: number;
+    status: string;
+  }> = [];
+
+  const filePattern = /^diff --git a\/(.+?) b\/(.+?)$/gm;
+  let match;
+
+  while ((match = filePattern.exec(diff)) !== null) {
+    const filePath = match[2] !== '/dev/null' ? match[2] : match[1];
+    const isNew = match[1] === '/dev/null' || match[1].startsWith('dev/null');
+    const isDeleted = match[2] === '/dev/null';
+
+    // Count additions and deletions (simplified)
+    const fileStart = match.index;
+    const nextFileMatch = filePattern.exec(diff);
+    const fileEnd = nextFileMatch ? nextFileMatch.index : diff.length;
+    filePattern.lastIndex = match.index + 1; // Reset to continue from after current match
+
+    const fileContent = diff.substring(fileStart, fileEnd);
+    const additions = (fileContent.match(/^\+[^+]/gm) || []).length;
+    const deletions = (fileContent.match(/^-[^-]/gm) || []).length;
+
+    files.push({
+      path: filePath,
+      additions,
+      deletions,
+      status: isNew ? 'added' : isDeleted ? 'deleted' : 'modified',
+    });
+  }
+
+  return files;
+}

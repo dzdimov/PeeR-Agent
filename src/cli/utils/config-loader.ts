@@ -34,6 +34,37 @@ export interface UserConfig {
     showStrategy?: boolean;
     showRecommendations?: boolean;
   };
+  /**
+   * Peer Review configuration - integrates with issue trackers (Jira, etc.)
+   * to validate PRs against tickets and acceptance criteria
+   */
+  peerReview?: {
+    // Enable/disable peer review feature
+    enabled?: boolean;
+    // Issue tracker provider: 'jira' | 'linear' | 'azure-devops' | 'github-issues'
+    provider?: string;
+    // Use MCP server for Jira access (recommended)
+    useMcp?: boolean;
+    // Direct API access settings (fallback if MCP not available)
+    instanceUrl?: string;
+    email?: string;
+    apiToken?: string;
+    // Default project key
+    defaultProject?: string;
+    // Custom field IDs (Jira-specific)
+    acceptanceCriteriaField?: string;
+    storyPointsField?: string;
+    // Custom ticket patterns (regex) - defaults to PROJ-123 format
+    ticketPatterns?: string[];
+    // Analysis options
+    analyzeAcceptanceCriteria?: boolean;
+    rateTicketQuality?: boolean;
+    generateTestSuggestions?: boolean;
+    checkScopeCreep?: boolean;
+    // Output options
+    includeTicketDetails?: boolean;
+    verbose?: boolean;
+  };
 }
 
 /**
