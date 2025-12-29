@@ -11,6 +11,7 @@ export interface UserConfig {
     anthropic?: string;
     openai?: string;
     google?: string;
+    zhipu?: string;
   };
   ai?: {
     provider?: string;
@@ -218,6 +219,7 @@ export function getApiKey(provider: string, config?: UserConfig): string | undef
     anthropic: 'ANTHROPIC_API_KEY',
     openai: 'OPENAI_API_KEY',
     google: 'GOOGLE_API_KEY',
+    zhipu: 'ZHIPU_API_KEY',
   };
 
   const envVar = envVarMap[provider.toLowerCase()];

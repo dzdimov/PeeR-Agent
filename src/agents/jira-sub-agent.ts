@@ -72,7 +72,7 @@ const AcceptanceCriteriaValidationSchema = z.object({
   // Analysis of each derived requirement against the PR
   criteriaAnalysis: z.array(
     z.object({
-      criteriaId: z.string(),
+      criteriaId: z.string().optional(),
       criteriaText: z.string(),
       status: z.enum(['met', 'unmet', 'partial', 'unclear']),
       confidence: z.number().min(0).max(100),

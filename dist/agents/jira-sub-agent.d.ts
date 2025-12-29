@@ -74,7 +74,7 @@ declare const AcceptanceCriteriaValidationSchema: z.ZodObject<{
         }>;
     }, z.core.$strip>>;
     criteriaAnalysis: z.ZodArray<z.ZodObject<{
-        criteriaId: z.ZodString;
+        criteriaId: z.ZodOptional<z.ZodString>;
         criteriaText: z.ZodString;
         status: z.ZodEnum<{
             met: "met";

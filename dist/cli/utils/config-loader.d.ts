@@ -3,6 +3,7 @@ export interface UserConfig {
         anthropic?: string;
         openai?: string;
         google?: string;
+        zhipu?: string;
     };
     ai?: {
         provider?: string;

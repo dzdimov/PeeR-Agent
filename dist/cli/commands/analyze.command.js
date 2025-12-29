@@ -243,6 +243,10 @@ export async function analyzePR(options = {}) {
             console.error(chalk.gray('      - Anthropic (Claude): export ANTHROPIC_API_KEY="your-api-key"'));
             console.error(chalk.gray('      - OpenAI (GPT): export OPENAI_API_KEY="your-api-key"'));
             console.error(chalk.gray('      - Google (Gemini): export GOOGLE_API_KEY="your-api-key"'));
+            console.error(chalk.gray('      - Zhipu (GLM): export ZHIPU_API_KEY="your-api-key"'));
+            if (options.verbose) {
+                console.error(chalk.gray(`   Debug: Provider=${provider}, Config apiKeys=${JSON.stringify(config.apiKeys || {})}`));
+            }
             process.exit(1);
         }
         spinner.succeed(`Using AI provider: ${provider}`);
@@ -361,6 +365,9 @@ export async function analyzePR(options = {}) {
         displayAgentResults(result, mode, options.verbose || false);
         // Run Peer Review if enabled (via flag or config)
         const peerReviewEnabled = options.peerReview || config.peerReview?.enabled;
+        if (options.verbose) {
+            console.log(chalk.gray(`\n   Debug: peerReviewEnabled=${peerReviewEnabled}, options.peerReview=${options.peerReview}, config.peerReview?.enabled=${config.peerReview?.enabled}`));
+        }
         if (peerReviewEnabled) {
             // Pass the same provider config to peer review so it uses the same LLM
             await runPeerReview(config, diff, title, result, options.verbose || false, {
@@ -583,6 +590,9 @@ async function runPeerReview(config, diff, title, prAnalysisResult, verbose, pro
             spinner.warn('Peer Review enabled but not configured. Add Jira settings to config.');
             console.log(chalk.gray('   Run: pr-agent config --set peerReview.instanceUrl=https://your.atlassian.net'));
             console.log(chalk.gray('   Or configure MCP: peerReview.useMcp=true'));
+            if (verbose) {
+                console.log(chalk.gray(`   Debug: peerReviewConfig=${JSON.stringify(peerReviewConfig)}`));
+            }
             return;
         }
         // Get branch name for ticket extraction
