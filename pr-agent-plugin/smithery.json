@@ -1,0 +1,53 @@
+{
+  "$schema": "https://smithery.ai/schema/mcp-server.json",
+  "name": "pr-agent-mcp",
+  "version": "1.0.0",
+  "description": "AI-powered pull request analysis MCP server - works with any MCP-compatible tool",
+  "author": "TechDebtGPT",
+  "license": "MIT",
+  "repository": "https://github.com/techdebtgpt/pr-agent",
+  "homepage": "https://github.com/techdebtgpt/pr-agent/tree/main/pr-agent-plugin",
+  "categories": [
+    "developer-tools",
+    "code-review",
+    "git"
+  ],
+  "tags": [
+    "pr",
+    "pull-request",
+    "code-review",
+    "git",
+    "diff",
+    "analysis"
+  ],
+  "runtime": "node",
+  "transport": "stdio",
+  "command": "npx",
+  "args": ["pr-agent-mcp"],
+  "tools": [
+    {
+      "name": "analyze_diff",
+      "description": "Get a diff ready for AI analysis with structured context"
+    },
+    {
+      "name": "analyze_branch",
+      "description": "Get current branch diff for AI analysis"
+    },
+    {
+      "name": "get_dashboard_stats",
+      "description": "Get PR analysis statistics and ROI metrics"
+    },
+    {
+      "name": "get_recent_analyses",
+      "description": "Get recent PR analysis history"
+    },
+    {
+      "name": "save_analysis",
+      "description": "Save analysis results to local database"
+    }
+  ],
+  "configuration": {
+    "properties": {},
+    "required": []
+  }
+}
