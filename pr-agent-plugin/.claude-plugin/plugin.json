@@ -1,0 +1,12 @@
+{
+  "name": "pr-agent",
+  "version": "1.0.0",
+  "description": "AI-powered pull request analyzer with risk detection, complexity scoring, and recommendations",
+  "author": {
+    "name": "TechDebtGPT",
+    "url": "https://github.com/techdebtgpt/pr-agent"
+  },
+  "repository": "https://github.com/techdebtgpt/pr-agent",
+  "license": "MIT",
+  "keywords": ["pr", "code-review", "analysis", "ai", "mcp"]
+}
