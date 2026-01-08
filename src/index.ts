@@ -1,5 +1,12 @@
 import { Probot } from 'probot';
+import express, { Request, Response, Router } from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { PRAnalyzerAgent } from './agents/pr-analyzer-agent.js';
+import { saveAnalysis, getDashboardStats, getRecentAnalyses } from './db/index.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const provider = (process.env.AI_PROVIDER || 'anthropic').toLowerCase() as 'anthropic' | 'openai' | 'google';
 const apiKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || process.env.GOOGLE_API_KEY;
@@ -60,8 +67,52 @@ function formatAnalysisForGitHub(result: any): string {
   return output;
 }
 
-export default (app: Probot) => {
+export default (app: Probot, { getRouter }: { getRouter?: (path?: string) => Router } = {}) => {
   app.log.info('🤖 PR Agent (LangChain) started');
+
+  // Dashboard Routes
+  if (getRouter) {
+    // Determine public path for static assets
+    const finalPublicPath = path.join(__dirname, 'public');
+    
+    const router = getRouter('/dashboard');
+    if (router) {
+      // Serve static files
+      router.use(express.static(finalPublicPath));
+      
+      // API Endpoints
+      router.get('/api/stats', (req: Request, res: Response) => {
+        try {
+          const stats = getDashboardStats();
+          const recent = getRecentAnalyses();
+          res.json({ stats, recent });
+        } catch (error) {
+          app.log.error('Error fetching stats:', error);
+          res.status(500).json({ error: 'Failed to fetch stats' });
+        }
+      });
+
+      router.get('/', (req: Request, res: Response) => {
+        res.sendFile(path.join(finalPublicPath, 'index.html'));
+      });
+      
+      app.log.info('NOTE: Dashboard available at /dashboard');
+    }
+
+    // Handle root path
+    const rootRouter = getRouter();
+    if (rootRouter) {
+        // Serve static files at root
+        rootRouter.use(express.static(finalPublicPath));
+
+        // Serve index.html at root
+        rootRouter.get('/', (req: Request, res: Response) => {
+            res.sendFile(path.join(finalPublicPath, 'index.html'));
+        });
+        
+        app.log.info('Dashboard configured at root /');
+    }
+  }
 
   app.on(['pull_request.opened', 'pull_request.synchronize'], async (context) => {
     const { pull_request: pr, repository } = context.payload;
@@ -84,6 +135,23 @@ export default (app: Probot) => {
         model,
       });
       const result = await agent.analyze(diff, pr.title);
+
+      // Save to Database
+      try {
+        saveAnalysis({
+          pr_number: pr.number,
+          repo_owner: repository.owner.login,
+          repo_name: repository.name,
+          author: pr.user.login,
+          title: pr.title,
+          complexity: result.overallComplexity || 0,
+          risks_count: result.overallRisks ? result.overallRisks.length : 0,
+          risks: JSON.stringify(result.overallRisks || []),
+          recommendations: JSON.stringify(result.recommendations || [])
+        });
+      } catch (dbError) {
+        app.log.error('Failed to save analysis to DB:', dbError);
+      }
 
       // Format the analysis for GitHub comment
       const summary = formatAnalysisForGitHub(result);

@@ -7,6 +7,7 @@ import { loadUserConfig, getApiKey } from '../utils/config-loader.js';
 import { archDocsExists } from '../../utils/arch-docs-parser.js';
 import { resolveDefaultBranch } from '../../utils/branch-resolver.js';
 import { ConfigurationError, GitHubAPIError, GitError } from '../../utils/errors.js';
+import { saveAnalysis } from '../../db/index.js';
 
 interface AnalyzeOptions {
   diff?: string;

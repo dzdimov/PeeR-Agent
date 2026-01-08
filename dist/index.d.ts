@@ -1,3 +1,6 @@
 import { Probot } from 'probot';
-declare const _default: (app: Probot) => void;
+import { Router } from 'express';
+declare const _default: (app: Probot, { getRouter }?: {
+    getRouter?: (path?: string) => Router;
+}) => void;
 export default _default;
