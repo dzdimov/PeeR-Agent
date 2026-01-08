@@ -1,45 +1,98 @@
-# PR Agent Plugin for Claude Code
+# PR Agent MCP Server
 
-AI-powered pull request analyzer that integrates with Claude Code via MCP.
+[![npm version](https://badge.fury.io/js/pr-agent-mcp.svg)](https://www.npmjs.com/package/pr-agent-mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Features
+An MCP (Model Context Protocol) server that provides AI-powered pull request analysis capabilities to any MCP-compatible tool like Claude Code, Cursor, or other AI assistants.
 
-- **Analyze Diffs**: Get AI-powered analysis of code changes
-- **Branch Comparison**: Compare current branch against base branch
-- **Dashboard Stats**: View analysis metrics and ROI
-- **Recent Analyses**: Access history of PR analyses
-- **Save Results**: Store analysis results for tracking
+## Overview
 
-## How It Works
+PR Agent MCP Server exposes code review functionality through the Model Context Protocol, allowing AI assistants to:
 
-This MCP server provides tools that return diff data and analysis context. The **calling tool's LLM** (e.g., Claude in Claude Code) performs the actual analysis - no separate API keys needed.
+- Analyze git diffs for risks, complexity, and code quality issues
+- Compare branches and provide structured code review feedback
+- Track analysis metrics and ROI in a local dashboard
+- Save and retrieve analysis history
+
+### Key Design Principle: LLM-Agnostic
+
+This MCP server is **LLM-agnostic** - it provides diff data and analysis context, while the **calling tool's LLM** performs the actual code review. This means:
+
+- **No API keys required** in the MCP server configuration
+- Works with **any AI model** used by the host application
+- Leverages the full capabilities of Claude, GPT, or any other LLM
+
+```
+┌──────────────────────────┐
+│  AI Assistant (Claude)   │  ← Performs the actual analysis
+└───────────┬──────────────┘
+            │ MCP Protocol
+            ▼
+┌──────────────────────────┐
+│   PR Agent MCP Server    │  ← Returns diff data + instructions
+└───────────┬──────────────┘
+            │
+            ▼
+┌──────────────────────────┐
+│  Git Repository + SQLite │  ← Data sources
+└──────────────────────────┘
+```
 
 ## Installation
 
-### Option 1: Local Plugin
+### Option 1: npm (Recommended)
 
 ```bash
-claude --plugin-dir /path/to/pr-agent/pr-agent-plugin
+npm install -g pr-agent-mcp
 ```
 
-### Option 2: Copy to Project
+### Option 2: From Source
 
-Copy `pr-agent-plugin/` to your project's `.claude-plugin/` directory.
+```bash
+git clone https://github.com/techdebtgpt/pr-agent.git
+cd pr-agent/pr-agent-plugin
+npm install
+```
 
-### Option 3: Add to MCP Settings
+## Configuration
 
-Add to your MCP configuration:
+### For Claude Code
+
+Add to your Claude Code MCP settings (`~/.claude/settings.json`):
 
 ```json
 {
   "mcpServers": {
     "pr-agent": {
-      "command": "node",
-      "args": ["/path/to/pr-agent/pr-agent-plugin/server/index.js"],
-      "env": {
-        "PR_AGENT_ROOT": "/path/to/pr-agent"
-      }
+      "command": "npx",
+      "args": ["pr-agent-mcp"]
     }
+  }
+}
+```
+
+### For Cursor
+
+Add to your Cursor MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "pr-agent": {
+      "command": "npx",
+      "args": ["pr-agent-mcp"]
+    }
+  }
+}
+```
+
+### For Other MCP Clients
+
+```json
+{
+  "pr-agent": {
+    "command": "node",
+    "args": ["/path/to/pr-agent-plugin/server/index.js"]
   }
 }
 ```
@@ -47,88 +100,164 @@ Add to your MCP configuration:
 ## MCP Tools
 
 ### `analyze_diff`
-Get a diff ready for AI analysis. Returns the diff content with context and instructions for the calling LLM.
 
-**Parameters:**
-- `diff` (required): The diff text to analyze
-- `title` (optional): PR title for context
+Get a diff ready for AI analysis. Returns the diff content with structured context and analysis instructions.
 
-**Returns:** Formatted diff with analysis instructions for the LLM
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `diff` | string | Yes | The diff text to analyze |
+| `title` | string | No | PR title for context |
+
+**Example:**
+```json
+{
+  "name": "analyze_diff",
+  "arguments": {
+    "diff": "diff --git a/src/app.js b/src/app.js\n...",
+    "title": "Add user authentication"
+  }
+}
+```
+
+---
 
 ### `analyze_branch`
-Get current branch diff for AI analysis. Returns the diff between current branch and base branch.
 
-**Parameters:**
-- `branch` (optional): Base branch to compare against (default: origin/main)
-- `cwd` (optional): Working directory of the repo
+Get current branch diff for AI analysis. Compares the current branch against a base branch.
 
-**Returns:** Formatted branch diff with context and analysis instructions
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `branch` | string | No | `origin/main` | Base branch to compare against |
+| `cwd` | string | No | Current directory | Working directory of the git repository |
+
+**Example:**
+```json
+{
+  "name": "analyze_branch",
+  "arguments": {
+    "branch": "origin/develop"
+  }
+}
+```
+
+---
 
 ### `get_dashboard_stats`
-Get analysis metrics and statistics from the local database.
+
+Get PR analysis statistics and ROI metrics from the local database.
 
 **Parameters:** None
 
-**Returns:** Dashboard statistics including total PRs, success rate, ROI metrics
+**Example Response:**
+```
+# PR Agent Dashboard Statistics
+
+## Overview
+- Total PRs Analyzed: 42
+- Success Rate: 85.7%
+- Average Complexity: 2.3
+
+## ROI Metrics
+- Hours Saved: 10.5
+- Estimated Cost Savings: $630
+```
+
+---
 
 ### `get_recent_analyses`
+
 Get recent PR analysis history.
 
-**Parameters:**
-- `limit` (optional): Number of results (default: 10)
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `limit` | number | No | 10 | Maximum number of results |
 
-**Returns:** Table of recent analyses with PR info
+---
 
 ### `save_analysis`
+
 Save analysis results to the local database for dashboard tracking.
 
-**Parameters:**
-- `title` (required): PR title
-- `complexity` (required): Complexity score (1-5)
-- `pr_number` (optional): PR number
-- `repo_owner` (optional): Repository owner
-- `repo_name` (optional): Repository name
-- `author` (optional): PR author
-- `risks_count` (optional): Number of risks
-- `risks` (optional): Array of risk descriptions
-- `recommendations` (optional): Array of recommendations
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `title` | string | Yes | PR title |
+| `complexity` | number | Yes | Complexity score (1-5) |
+| `pr_number` | number | No | PR number or identifier |
+| `repo_owner` | string | No | Repository owner |
+| `repo_name` | string | No | Repository name |
+| `author` | string | No | PR author |
+| `risks_count` | number | No | Number of risks identified |
+| `risks` | string[] | No | Array of risk descriptions |
+| `recommendations` | string[] | No | Array of recommendations |
 
-## Commands
+## Usage Examples
 
-- `/pr-analyze` - Analyze current branch
-- `/pr-stats` - Show dashboard statistics
-- `/pr-recent` - Show recent analyses
-
-## Example Usage
+### Analyzing Current Branch
 
 ```
-User: Analyze my current branch changes
-Claude: [Uses analyze_branch tool, then performs analysis with its own LLM]
+User: Review my current branch changes
 
-User: /pr-stats
-Claude: [Shows dashboard metrics from local database]
+AI Assistant:
+1. Calls analyze_branch tool
+2. Receives diff with context
+3. Analyzes code for risks, complexity, issues
+4. Provides structured feedback
+5. Optionally saves results with save_analysis
 ```
 
-## Architecture
+### Checking Dashboard Metrics
 
 ```
-┌──────────────────────┐
-│  Claude Code / LLM   │  ← Performs the actual AI analysis
-└──────────┬───────────┘
-           │
-           ▼
-┌──────────────────────┐
-│  PR Agent MCP Server │  ← Returns diff data + instructions
-└──────────┬───────────┘
-           │
-           ▼
-┌──────────────────────┐
-│  Git Repository      │  ← Source of diffs
-│  SQLite Database     │  ← Stores analysis history
-└──────────────────────┘
+User: How is our team doing with code quality?
+
+AI Assistant:
+1. Calls get_dashboard_stats tool
+2. Displays metrics summary
 ```
 
-The MCP server is **LLM-agnostic** - it provides the data and context, while the calling tool's LLM performs the actual analysis. This means:
-- No API keys needed in the plugin
-- Works with any MCP-compatible tool
-- Uses the host tool's AI capabilities
+### Reviewing a Specific Diff
+
+```
+User: Here's a diff I want reviewed: [paste diff]
+
+AI Assistant:
+1. Calls analyze_diff with provided diff
+2. Performs analysis
+3. Returns structured review
+```
+
+## Development
+
+### Running Locally
+
+```bash
+cd pr-agent-plugin
+npm install
+node server/index.js
+```
+
+### Testing
+
+The server communicates via stdio. You can test with:
+
+```bash
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | node server/index.js
+```
+
+## Requirements
+
+- Node.js >= 18.0.0
+- Git (for branch analysis)
+
+## License
+
+MIT - See [LICENSE](../LICENSE) for details.
+
+## Contributing
+
+Contributions welcome! Please read the [contributing guidelines](../CONTRIBUTING.md) first.
+
+## Related Projects
+
+- [PR Agent CLI](https://github.com/techdebtgpt/pr-agent) - Full PR Agent with CLI and GitHub Action
+- [Model Context Protocol](https://modelcontextprotocol.io/) - MCP specification

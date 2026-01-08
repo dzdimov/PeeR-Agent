@@ -1,16 +1,50 @@
 {
-  "name": "pr-agent-plugin",
+  "name": "pr-agent-mcp",
   "version": "1.0.0",
-  "description": "Claude Code MCP plugin for PR Agent",
+  "description": "MCP server for AI-powered pull request analysis - works with Claude Code, Cursor, and other MCP-compatible tools",
   "type": "module",
   "main": "server/index.js",
-  "scripts": {
-    "start": "node server/index.js"
+  "bin": {
+    "pr-agent-mcp": "./server/index.js"
   },
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "echo \"No tests yet\""
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "pr-agent",
+    "pull-request",
+    "code-review",
+    "ai",
+    "claude",
+    "cursor",
+    "git",
+    "diff-analysis"
+  ],
+  "author": {
+    "name": "TechDebtGPT",
+    "url": "https://github.com/techdebtgpt"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/techdebtgpt/pr-agent.git",
+    "directory": "pr-agent-plugin"
+  },
+  "bugs": {
+    "url": "https://github.com/techdebtgpt/pr-agent/issues"
+  },
+  "homepage": "https://github.com/techdebtgpt/pr-agent/tree/main/pr-agent-plugin#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.5.0"
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "files": [
+    "server/",
+    "README.md"
+  ]
 }
