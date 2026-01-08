@@ -164,6 +164,8 @@ dist/*
 !dist/providers/**
 !dist/types/
 !dist/types/**
+!dist/mcp/
+!dist/mcp/**
 
 # ArchDoc configuration (contains API keys)
 .archdoc.config.json

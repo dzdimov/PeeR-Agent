@@ -3,12 +3,15 @@
 /**
  * PR Agent MCP Server
  *
- * LLM-agnostic MCP server that mirrors the CLI workflow exactly.
- * Uses the same configuration file (.pragent.config.json) and supports
- * all the same features (Jira peer review, arch-docs, etc.).
+ * MCP server that uses the same PRAnalyzerAgent as the CLI.
+ * Uses a StubChatModel to trigger fallback paths in PRAnalyzerAgent,
+ * which runs static analysis (semgrep, patterns) and generates default recommendations.
  *
- * The only difference from CLI: No AI provider API keys required.
- * The calling tool's LLM (Claude Code, Cursor, etc.) does the AI analysis.
+ * The calling LLM (Claude Code, Cursor, etc.) provides AI-powered insights
+ * after receiving the analysis response.
+ *
+ * Note: When Claude Code adds MCP sampling support (Issue #1785),
+ * the StubChatModel can be replaced with MCPChatModel for true pass-through LLM access.
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -23,213 +26,21 @@ import * as fs from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Import utilities from PR Agent codebase (same as CLI)
-import { parseDiff } from '../tools/pr-analysis-tools.js';
-import { parseAllArchDocs, archDocsExists } from '../utils/arch-docs-parser.js';
-import { buildArchDocsContext } from '../utils/arch-docs-rag.js';
-import { resolveDefaultBranch } from '../utils/branch-resolver.js';
+// Import from PR Agent codebase (same as CLI)
+import { PRAnalyzerAgent } from '../agents/pr-analyzer-agent.js';
 import { getDashboardStats, getRecentAnalyses, saveAnalysis } from '../db/index.js';
 import { loadUserConfig, type UserConfig } from '../cli/utils/config-loader.js';
-import type { DiffFile } from '../types/agent.types.js';
+import { resolveDefaultBranch } from '../utils/branch-resolver.js';
+import { StubChatModel } from './stub-chat-model.js';
+import { parseDiff } from '../tools/pr-analysis-tools.js';
+import type { Fix, DiffFile } from '../types/agent.types.js';
 
 // Dashboard server state
 let httpServer: any = null;
 let dashboardPort: number | null = null;
 
 /**
- * Detect potential risks using pattern matching (same patterns as CLI)
- */
-function detectRiskPatterns(diff: string, files: DiffFile[]): Array<{
-  type: string;
-  severity: 'critical' | 'warning' | 'info';
-  description: string;
-  file?: string;
-  line?: number;
-}> {
-  const risks: Array<{
-    type: string;
-    severity: 'critical' | 'warning' | 'info';
-    description: string;
-    file?: string;
-    line?: number;
-  }> = [];
-
-  // Security patterns - same as CLI
-  if (/password\s*[=:]\s*['"][^'"]+['"]/i.test(diff)) {
-    risks.push({
-      type: 'security',
-      severity: 'critical',
-      description: 'Potential hardcoded password detected',
-    });
-  }
-  if (/api[_-]?key\s*[=:]\s*['"][^'"]+['"]/i.test(diff)) {
-    risks.push({
-      type: 'security',
-      severity: 'critical',
-      description: 'Potential hardcoded API key detected',
-    });
-  }
-  if (/secret\s*[=:]\s*['"][^'"]+['"]/i.test(diff)) {
-    risks.push({
-      type: 'security',
-      severity: 'critical',
-      description: 'Potential hardcoded secret detected',
-    });
-  }
-  if (/eval\s*\(/i.test(diff)) {
-    risks.push({
-      type: 'security',
-      severity: 'warning',
-      description: 'Use of eval() detected - potential code injection risk',
-    });
-  }
-  if (/innerHTML\s*=/i.test(diff) || /dangerouslySetInnerHTML/i.test(diff)) {
-    risks.push({
-      type: 'security',
-      severity: 'warning',
-      description: 'Direct HTML injection detected - potential XSS risk',
-    });
-  }
-  if (/exec\s*\(|execSync\s*\(/i.test(diff) && /\$\{|\+\s*['"]/i.test(diff)) {
-    risks.push({
-      type: 'security',
-      severity: 'critical',
-      description: 'Command execution with string interpolation - potential command injection',
-    });
-  }
-
-  // SQL injection patterns
-  if (/SELECT.*FROM.*WHERE.*\+|INSERT.*INTO.*VALUES.*\+/i.test(diff)) {
-    risks.push({
-      type: 'security',
-      severity: 'critical',
-      description: 'SQL query with string concatenation - potential SQL injection',
-    });
-  }
-
-  // Code quality patterns
-  const todoCount = (diff.match(/TODO|FIXME|XXX|HACK/gi) || []).length;
-  if (todoCount > 0) {
-    risks.push({
-      type: 'quality',
-      severity: 'info',
-      description: `${todoCount} TODO/FIXME comments found - incomplete work markers`,
-    });
-  }
-
-  const consoleLogCount = (diff.match(/console\.log\s*\(/g) || []).length;
-  if (consoleLogCount > 3) {
-    risks.push({
-      type: 'quality',
-      severity: 'warning',
-      description: `${consoleLogCount} console.log statements - consider using proper logging`,
-    });
-  }
-
-  // Error handling patterns
-  if (/throw\s+new\s+Error/i.test(diff) && !/try\s*\{/i.test(diff)) {
-    risks.push({
-      type: 'quality',
-      severity: 'warning',
-      description: 'Throws errors without apparent try-catch handling',
-    });
-  }
-
-  // Breaking change patterns
-  if (/-\s*export\s+(interface|type|class|function|const)\s+\w+/i.test(diff)) {
-    risks.push({
-      type: 'breaking',
-      severity: 'warning',
-      description: 'Removed or modified export - potential breaking change',
-    });
-  }
-
-  return risks;
-}
-
-/**
- * Calculate complexity score (same algorithm as CLI)
- */
-function calculateComplexity(files: DiffFile[]): {
-  score: number;
-  factors: {
-    totalChanges: number;
-    fileCount: number;
-    avgFileComplexity: number;
-    hasConfigChanges: boolean;
-    hasTestChanges: boolean;
-    hasMigrations: boolean;
-  };
-  recommendation: string;
-} {
-  const totalChanges = files.reduce((sum, f) => sum + f.additions + f.deletions, 0);
-  const fileCount = files.length;
-
-  const fileComplexities = files.map(f => {
-    let complexity = 1;
-    const changes = f.additions + f.deletions;
-    if (changes > 200) complexity = 5;
-    else if (changes > 100) complexity = 4;
-    else if (changes > 50) complexity = 3;
-    else if (changes > 20) complexity = 2;
-    return complexity;
-  });
-
-  const avgFileComplexity = fileComplexities.length > 0
-    ? fileComplexities.reduce((a, b) => a + b, 0) / fileComplexities.length
-    : 1;
-
-  const hasConfigChanges = files.some(f =>
-    /config|\.env|settings|\.ya?ml$/i.test(f.path)
-  );
-  const hasTestChanges = files.some(f =>
-    /test|spec|__tests__/i.test(f.path)
-  );
-  const hasMigrations = files.some(f =>
-    /migration|schema/i.test(f.path)
-  );
-
-  let score = 1;
-
-  if (totalChanges > 500) score = Math.max(score, 5);
-  else if (totalChanges > 300) score = Math.max(score, 4);
-  else if (totalChanges > 150) score = Math.max(score, 3);
-  else if (totalChanges > 50) score = Math.max(score, 2);
-
-  if (fileCount > 20) score = Math.max(score, 5);
-  else if (fileCount > 10) score = Math.max(score, 4);
-  else if (fileCount > 5) score = Math.max(score, 3);
-
-  if (avgFileComplexity >= 4) score = Math.max(score, 5);
-  else if (avgFileComplexity >= 3) score = Math.max(score, 4);
-
-  if (hasMigrations) score = Math.max(score, 3);
-  if (hasConfigChanges && totalChanges > 50) score = Math.max(score, 3);
-
-  score = Math.min(score, 5);
-
-  const recommendation = score >= 4
-    ? 'High complexity - consider breaking into smaller PRs'
-    : score >= 3
-      ? 'Moderate complexity - ensure thorough testing'
-      : 'Low complexity - straightforward changes';
-
-  return {
-    score,
-    factors: {
-      totalChanges,
-      fileCount,
-      avgFileComplexity: Math.round(avgFileComplexity * 10) / 10,
-      hasConfigChanges,
-      hasTestChanges,
-      hasMigrations,
-    },
-    recommendation,
-  };
-}
-
-/**
- * Get git diff (same as CLI)
+ * Get git diff
  */
 function getGitDiff(command: string, cwd?: string): string {
   try {
@@ -312,7 +123,7 @@ function getGitAuthor(cwd?: string): string {
 }
 
 /**
- * Extract ticket references from text (same patterns as CLI)
+ * Extract ticket references from text
  */
 function extractTicketReferences(
   title?: string,
@@ -322,11 +133,8 @@ function extractTicketReferences(
 ): Array<{ key: string; source: string; confidence: number }> {
   const refs: Array<{ key: string; source: string; confidence: number }> = [];
   const seen = new Set<string>();
-
-  // Standard Jira pattern: PROJ-123
   const jiraPattern = /\b([A-Z][A-Z0-9]+-\d+)\b/g;
 
-  // Check title
   if (title) {
     let match;
     while ((match = jiraPattern.exec(title)) !== null) {
@@ -337,7 +145,6 @@ function extractTicketReferences(
     }
   }
 
-  // Check branch name
   if (branchName) {
     let match;
     jiraPattern.lastIndex = 0;
@@ -349,7 +156,6 @@ function extractTicketReferences(
     }
   }
 
-  // Check commit messages
   if (commitMessages) {
     for (const msg of commitMessages) {
       let match;
@@ -367,9 +173,9 @@ function extractTicketReferences(
 }
 
 /**
- * Format output like CLI (for calling LLM to display)
+ * Format CLI-style output
  */
-function formatCLIOutput(analysis: any): string {
+function formatCLIOutput(result: any, ticketRefs: any[], peerReviewEnabled: boolean): string {
   const lines: string[] = [];
 
   lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -377,94 +183,86 @@ function formatCLIOutput(analysis: any): string {
   lines.push('✨ PR Agent Analysis Complete!');
   lines.push('');
 
-  // Summary section
+  // Summary
   lines.push('📋 Summary');
   lines.push('');
-  lines.push(`Title: ${analysis.title || 'Untitled'}`);
-  lines.push(`Repository: ${analysis.repository}`);
-  lines.push(`Branch: ${analysis.currentBranch} → ${analysis.baseBranch}`);
-  lines.push(`Files changed: ${analysis.stats.filesChanged}`);
-  lines.push(`Lines: +${analysis.stats.totalAdditions} / -${analysis.stats.totalDeletions}`);
-  if (analysis.stats.languages.length > 0) {
-    lines.push(`Languages: ${analysis.stats.languages.join(', ')}`);
+  lines.push(`Title: ${result.title || 'Untitled'}`);
+  lines.push(`Repository: ${result.repository}`);
+  lines.push(`Branch: ${result.currentBranch} → ${result.baseBranch}`);
+  lines.push(`Files changed: ${result.files?.length || 0}`);
+
+  const additions = result.files?.reduce((sum: number, f: any) => sum + (f.additions || 0), 0) || 0;
+  const deletions = result.files?.reduce((sum: number, f: any) => sum + (f.deletions || 0), 0) || 0;
+  lines.push(`Lines: +${additions} / -${deletions}`);
+
+  const languages = [...new Set(result.files?.map((f: any) => f.language).filter(Boolean) || [])];
+  if (languages.length > 0) {
+    lines.push(`Languages: ${languages.join(', ')}`);
   }
   lines.push('');
 
-  // Complexity section
+  // Complexity
   lines.push('📊 Complexity');
   lines.push('');
-  lines.push(`Score: ${analysis.complexity.score}/5 - ${analysis.complexity.recommendation}`);
-  lines.push(`Total changes: ${analysis.complexity.factors.totalChanges} lines`);
-  lines.push(`Files: ${analysis.complexity.factors.fileCount}`);
-  if (analysis.complexity.factors.hasConfigChanges) lines.push('⚙️  Contains config changes');
-  if (analysis.complexity.factors.hasTestChanges) lines.push('🧪 Contains test changes');
-  if (analysis.complexity.factors.hasMigrations) lines.push('🗃️  Contains migrations');
+  const complexity = result.complexity || 1;
+  const complexityDesc = complexity >= 4
+    ? 'High complexity - consider breaking into smaller PRs'
+    : complexity >= 3
+      ? 'Moderate complexity - ensure thorough testing'
+      : 'Low complexity - straightforward changes';
+  lines.push(`Score: ${complexity}/5 - ${complexityDesc}`);
+  lines.push(`Total changes: ${additions + deletions} lines`);
+  lines.push(`Files: ${result.files?.length || 0}`);
   lines.push('');
 
-  // Risks section
-  if (analysis.risks.detected.length > 0) {
+  // Risks
+  if (result.fixes && result.fixes.length > 0) {
     lines.push('⚠️  Detected Risks');
     lines.push('');
-    analysis.risks.detected.forEach((risk: any, i: number) => {
-      const icon = risk.severity === 'critical' ? '🔴' : risk.severity === 'warning' ? '🟡' : '🔵';
-      lines.push(`  ${i + 1}. ${icon} [${risk.severity.toUpperCase()}] ${risk.description}`);
-      if (risk.file) lines.push(`     File: ${risk.file}${risk.line ? `:${risk.line}` : ''}`);
+    result.fixes.slice(0, 10).forEach((fix: Fix, i: number) => {
+      const icon = fix.severity === 'critical' ? '🔴' : fix.severity === 'warning' ? '🟡' : '🔵';
+      lines.push(`  ${i + 1}. ${icon} [${(fix.severity || 'info').toUpperCase()}] ${fix.comment}`);
+      if (fix.file) lines.push(`     File: ${fix.file}${fix.line ? `:${fix.line}` : ''}`);
     });
     lines.push('');
   }
 
-  // Files section
-  lines.push('📁 Files Changed');
-  lines.push('');
-  analysis.files.forEach((f: any) => {
-    const statusIcon = f.status === 'A' ? '➕' : f.status === 'D' ? '➖' : '📝';
-    lines.push(`  ${statusIcon} ${f.path} (+${f.additions}/-${f.deletions})`);
-  });
-  lines.push('');
-
-  // Arch-docs section
-  if (analysis.archDocs?.available) {
-    lines.push('📚 Architecture Documentation');
+  // Files
+  if (result.files && result.files.length > 0) {
+    lines.push('📁 Files Changed');
     lines.push('');
-    lines.push(`Documents found: ${analysis.archDocs.totalDocs}`);
-    if (analysis.archDocs.relevantSections?.length > 0) {
-      lines.push('Relevant sections:');
-      analysis.archDocs.relevantSections.slice(0, 5).forEach((section: string) => {
-        lines.push(`  • ${section}`);
-      });
-    }
+    result.files.forEach((f: any) => {
+      const statusIcon = f.status === 'A' ? '➕' : f.status === 'D' ? '➖' : '📝';
+      lines.push(`  ${statusIcon} ${f.path} (+${f.additions || 0}/-${f.deletions || 0})`);
+    });
     lines.push('');
   }
 
-  // Peer review section (if tickets found)
-  if (analysis.peerReview?.ticketReferences?.length > 0) {
+  // Recommendations
+  if (result.recommendations && result.recommendations.length > 0) {
+    lines.push('💡 Recommendations');
+    lines.push('');
+    result.recommendations.forEach((rec: string, i: number) => {
+      lines.push(`  ${i + 1}. ${rec}`);
+    });
+    lines.push('');
+  }
+
+  // Tickets
+  if (ticketRefs.length > 0) {
     lines.push('🎫 Linked Tickets');
     lines.push('');
-    analysis.peerReview.ticketReferences.forEach((ref: any) => {
+    ticketRefs.forEach((ref: any) => {
       lines.push(`  • ${ref.key} (from ${ref.source}, confidence: ${ref.confidence}%)`);
     });
     lines.push('');
-    if (analysis.peerReview.config?.enabled) {
+    if (peerReviewEnabled) {
       lines.push('Jira integration is enabled. The calling LLM should validate against ticket requirements.');
     }
     lines.push('');
   }
 
   lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
-  // Instructions for calling LLM
-  lines.push('');
-  lines.push('📝 INSTRUCTIONS FOR AI ANALYSIS:');
-  lines.push('');
-  lines.push('Please analyze this PR and provide:');
-  lines.push('1. A brief summary of what the changes do');
-  lines.push('2. Potential risks or issues (bugs, edge cases, security)');
-  lines.push('3. Recommendations for improvement');
-  if (analysis.peerReview?.ticketReferences?.length > 0) {
-    lines.push('4. Validation against linked ticket requirements (if Jira access available)');
-  }
-  lines.push('');
-  lines.push('Format your response like the PR Agent CLI output shown above.');
 
   return lines.join('\n');
 }
@@ -476,7 +274,7 @@ const server = new McpServer({
 });
 
 /**
- * analyze - Main entry point (mirrors CLI analyze command)
+ * analyze - Main entry point (uses same PRAnalyzerAgent as CLI)
  */
 server.tool(
   'analyze',
@@ -502,7 +300,7 @@ Returns formatted analysis for the calling LLM to display and enhance with AI in
       try {
         config = await loadUserConfig(verbose, false);
       } catch (e) {
-        // Config not found is OK for MCP
+        // Config not found is OK
       }
 
       // Resolve base branch (same logic as CLI)
@@ -520,7 +318,7 @@ Returns formatted analysis for the calling LLM to display and enhance with AI in
         }
       }
 
-      // Get diff (same as CLI)
+      // Get diff
       let diff: string;
       if (args.staged) {
         diff = getGitDiff('git diff --staged', workDir);
@@ -528,64 +326,22 @@ Returns formatted analysis for the calling LLM to display and enhance with AI in
         diff = getGitDiff(`git diff ${baseBranch}`, workDir);
       }
 
-      if (!diff) {
-        return {
-          content: [{
-            type: 'text' as const,
-            text: formatCLIOutput({
-              title: args.title || getPRTitle(workDir),
-              repository: `${getRepoInfo(workDir).owner}/${getRepoInfo(workDir).name}`,
-              currentBranch: getCurrentBranch(workDir),
-              baseBranch: baseBranch || 'staged',
-              stats: { filesChanged: 0, totalAdditions: 0, totalDeletions: 0, languages: [] },
-              files: [],
-              risks: { detected: [], criticalCount: 0, warningCount: 0 },
-              complexity: { score: 1, factors: {}, recommendation: 'No changes to analyze' },
-              message: 'No changes detected',
-            }),
-          }],
-        };
-      }
-
-      // Parse diff (same as CLI)
-      const files = parseDiff(diff);
       const title = args.title || getPRTitle(workDir);
       const currentBranch = getCurrentBranch(workDir);
       const repoInfo = getRepoInfo(workDir);
 
-      // Detect risks (same patterns as CLI)
-      const risks = detectRiskPatterns(diff, files);
-
-      // Calculate complexity (same algorithm as CLI)
-      const complexity = calculateComplexity(files);
-
-      // Check for arch-docs (same as CLI)
-      const useArchDocs = args.archDocs !== false;
-      const hasArchDocs = archDocsExists(workDir);
-      let archDocsData: any = null;
-
-      if (useArchDocs && hasArchDocs) {
-        const docs = parseAllArchDocs(workDir);
-        const context = buildArchDocsContext(docs, { title, files, diff });
-        const relevantSections = context?.relevantDocs?.map(d => `${d.filename}: ${d.section}`) || [];
-        archDocsData = {
-          available: true,
-          totalDocs: docs.length,
-          relevantSections,
-          summary: context?.summary || '',
-          documents: docs.map(d => ({
-            filename: d.filename,
-            title: d.title,
-            sections: d.sections.map(s => s.heading),
-          })),
+      if (!diff) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `No changes detected between ${currentBranch} and ${baseBranch || 'staged'}`,
+          }],
         };
       }
 
-      // Extract ticket references for peer review (same as CLI)
-      let branchName: string | undefined;
+      // Extract ticket references
       let commitMessages: string[] = [];
       try {
-        branchName = currentBranch;
         const commits = execSync('git log --oneline -10', {
           encoding: 'utf-8',
           cwd: workDir,
@@ -598,55 +354,49 @@ Returns formatted analysis for the calling LLM to display and enhance with AI in
       const peerReviewEnabled = args.peerReview ?? config.peerReview?.enabled ?? false;
       const ticketRefs = extractTicketReferences(
         title,
-        branchName,
+        currentBranch,
         commitMessages,
         config.peerReview?.defaultProject
       );
 
-      // Build analysis result (same structure as CLI)
-      const analysis = {
-        title: title || 'Untitled',
-        repository: `${repoInfo.owner}/${repoInfo.name}`,
-        currentBranch,
-        baseBranch: baseBranch || 'staged',
-        stats: {
-          filesChanged: files.length,
-          totalAdditions: files.reduce((sum, f) => sum + f.additions, 0),
-          totalDeletions: files.reduce((sum, f) => sum + f.deletions, 0),
-          languages: [...new Set(files.map(f => f.language).filter(Boolean))],
-          estimatedTokens: Math.ceil(diff.length / 4),
-        },
-        files: files.map(f => ({
-          path: f.path,
-          language: f.language,
-          status: f.status || 'M',
-          additions: f.additions,
-          deletions: f.deletions,
-        })),
-        risks: {
-          detected: risks,
-          criticalCount: risks.filter(r => r.severity === 'critical').length,
-          warningCount: risks.filter(r => r.severity === 'warning').length,
-        },
-        complexity,
-        archDocs: archDocsData || { available: false },
-        peerReview: {
-          enabled: peerReviewEnabled,
-          ticketReferences: ticketRefs,
-          config: peerReviewEnabled ? {
-            enabled: true,
-            provider: config.peerReview?.provider || 'jira',
-            instanceUrl: config.peerReview?.instanceUrl,
-            defaultProject: config.peerReview?.defaultProject,
-          } : null,
-        },
-        config: {
+      // Create PRAnalyzerAgent with StubChatModel
+      // The stub model triggers fallback paths, allowing:
+      // 1. Static analysis (semgrep, pattern matching) to run
+      // 2. Default recommendations to be generated
+      // The calling LLM (Claude Code) provides AI insights after receiving response
+      // Note: When Claude Code adds MCP sampling support (Issue #1785),
+      // we can switch to MCPChatModel for true pass-through LLM access
+      const stubModel = new StubChatModel();
+      const agent = new PRAnalyzerAgent({ chatModel: stubModel });
+
+      // Run analysis using PRAnalyzerAgent (same workflow as CLI)
+      const useArchDocs = args.archDocs !== false;
+      console.error('[MCP Server] Running PRAnalyzerAgent.analyze()...');
+      const result = await agent.analyze(
+        diff,
+        title,
+        { summary: true, risks: true, complexity: true },
+        {
+          useArchDocs,
+          repoPath: workDir,
           language: config.analysis?.language,
           framework: config.analysis?.framework,
-          enableStaticAnalysis: config.analysis?.enableStaticAnalysis,
-        },
-        diff, // Include full diff for AI analysis
-      };
+          enableStaticAnalysis: config.analysis?.enableStaticAnalysis !== false,
+        }
+      );
+
+      console.error('[MCP Server] Analysis complete. Result:');
+      console.error('  - summary:', result.summary?.substring(0, 100));
+      console.error('  - recommendations:', JSON.stringify(result.recommendations));
+      console.error('  - fixes count:', result.fixes?.length);
+      console.error('  - fileAnalyses size:', result.fileAnalyses?.size);
+
+      // Calculate overall complexity from file analyses
+      let overallComplexity = 1;
+      if (result.fileAnalyses && result.fileAnalyses.size > 0) {
+        const complexities = Array.from(result.fileAnalyses.values()).map((f: any) => f.complexity || 1);
+        overallComplexity = Math.round(complexities.reduce((a: number, b: number) => a + b, 0) / complexities.length);
+      }
 
       // Save to database (same as CLI)
       try {
@@ -659,20 +409,35 @@ Returns formatted analysis for the calling LLM to display and enhance with AI in
           repo_name: repoInfo.name,
           author,
           title: title || 'Untitled Analysis',
-          complexity: complexity.score,
-          risks_count: risks.filter(r => r.severity === 'critical' || r.severity === 'warning').length,
-          risks: JSON.stringify(risks.map(r => r.description)),
-          recommendations: JSON.stringify([]),
+          complexity: overallComplexity,
+          risks_count: result.fixes?.filter((f: Fix) => f.severity === 'critical' || f.severity === 'warning').length || 0,
+          risks: JSON.stringify(result.fixes?.filter((f: Fix) => f.severity === 'critical' || f.severity === 'warning').map((f: Fix) => f.comment) || []),
+          recommendations: JSON.stringify(result.recommendations || []),
         });
       } catch {
         // Ignore save errors
       }
 
-      // Return formatted output (same format as CLI)
+      // Parse diff to get files for output
+      const files: DiffFile[] = parseDiff(diff);
+
+      // Build output data
+      const outputData = {
+        title: title || 'Untitled',
+        repository: `${repoInfo.owner}/${repoInfo.name}`,
+        currentBranch,
+        baseBranch: baseBranch || 'staged',
+        files,
+        fixes: result.fixes || [],
+        recommendations: result.recommendations || [],
+        complexity: overallComplexity,
+      };
+
+      // Return formatted output
       return {
         content: [{
           type: 'text' as const,
-          text: formatCLIOutput(analysis),
+          text: formatCLIOutput(outputData, ticketRefs, peerReviewEnabled),
         }],
       };
     } catch (error: any) {
@@ -766,7 +531,7 @@ server.tool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('PR Agent MCP Server started - mirrors CLI workflow (LLM-agnostic mode)');
+  console.error('PR Agent MCP Server started - uses same PRAnalyzerAgent as CLI');
 }
 
 main().catch((error) => {
