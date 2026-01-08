@@ -12,15 +12,21 @@ PR Agent analyzes your code changes and provides:
 - **Complexity Rating**: A 1-5 scale rating of complexity with file-level breakdown
 - **Actionable Insights**: Specific recommendations based on your codebase
 - **Architecture-Aware Analysis**: Leverages your `.arch-docs` for context-aware reviews
+- **Peer Review Integration**: Validates PRs against linked Jira tickets and acceptance criteria
+- **Static Analysis**: Semgrep integration for security vulnerabilities and code quality issues
 
 ## Features
 
-✨ **Intelligent Agent Mode** - Automatically handles large diffs without chunking  
-🏗️ **Architecture Documentation Integration** - Uses `.arch-docs` for smarter analysis  
-🔌 **Multiple AI Providers** - Anthropic Claude, OpenAI GPT, Google Gemini  
-🖥️ **CLI & GitHub Action** - Use locally or in CI/CD pipelines  
-📊 **File-Level Analysis** - Individual risk and complexity scores per file  
+✨ **Intelligent Agent Mode** - Automatically handles large diffs without chunking
+🏗️ **Architecture Documentation Integration** - Uses `.arch-docs` for smarter analysis
+🔬 **Static Analysis Integration** - Semgrep-powered security and code quality scanning
+🔌 **Multiple AI Providers** - Anthropic Claude, OpenAI GPT, Google Gemini, Zhipu AI
+🖥️ **CLI & GitHub Action** - Use locally or in CI/CD pipelines
+📊 **File-Level Analysis** - Individual risk and complexity scores per file
+🎫 **Peer Review Integration** - Validates against Jira tickets and acceptance criteria
+🌐 **Language-Aware** - Supports TypeScript, JavaScript, Python, Java, Go, Rust, and more
 ⚙️ **Configurable** - Customize models, providers, and analysis modes
+🎨 **Unified Output Format** - Semgrep and AI findings use consistent formatting, sorted by severity
 
 ## Quick Reference
 
@@ -53,7 +59,10 @@ pr-agent help                       # Show help
   - [Quick Start](#quick-start)
   - [Analyze Command](#analyze-command)
   - [Configuration](#configuration)
+- [UI Dashboard](#ui-dashboard)
 - [Architecture Documentation Integration](#architecture-documentation-integration)
+- [Static Analysis Integration](#static-analysis-integration)
+- [Peer Review Integration](#peer-review-integration)
 - [GitHub Action Usage](#github-action-usage)
 - [Supported AI Models](#supported-ai-models)
 - [Common Use Cases](#common-use-cases)
@@ -70,6 +79,7 @@ Before using PR Agent, you'll need:
    - **Anthropic Claude**: Sign up at [Anthropic Console](https://console.anthropic.com/) (Recommended)
    - **OpenAI GPT**: Get your key from [OpenAI Platform](https://platform.openai.com/)
    - **Google Gemini**: Get your key from [Google AI Studio](https://makersuite.google.com/)
+   - **Zhipu AI**: Get your key from [Zhipu AI Platform](https://open.bigmodel.cn/) (Anthropic-compatible API)
 
 2. **For GitHub Action**: Repository with permissions to add workflows and secrets
 
@@ -168,6 +178,7 @@ pr-agent analyze --complexity
 pr-agent analyze --provider anthropic
 pr-agent analyze --provider openai
 pr-agent analyze --provider google
+pr-agent analyze --provider zhipu
 
 # Use specific model
 pr-agent analyze --provider anthropic --model claude-sonnet-4-5-20250929
@@ -236,13 +247,17 @@ pr-agent config --reset
   "apiKeys": {
     "anthropic": "sk-ant-...",
     "openai": "",
-    "google": ""
+    "google": "",
+    "zhipu": ""
   },
   "analysis": {
     "defaultMode": "full",
     "maxCost": 5.0,
     "autoDetectAgent": true,
-    "agentThreshold": 50000
+    "agentThreshold": 50000,
+    "language": "typescript",
+    "framework": "react",
+    "enableStaticAnalysis": true
   },
   "git": {
     "defaultBranch": "origin/main",
@@ -257,6 +272,14 @@ pr-agent config --reset
     "verbose": false,
     "showStrategy": true,
     "showRecommendations": true
+  },
+  "peerReview": {
+    "enabled": false,
+    "provider": "jira",
+    "instanceUrl": "https://your-company.atlassian.net",
+    "email": "your-email@company.com",
+    "apiToken": "your-jira-api-token",
+    "defaultProject": "PROJ"
   }
 }
 ```
@@ -274,6 +297,9 @@ export OPENAI_API_KEY="sk-..."
 
 # Google Gemini
 export GOOGLE_API_KEY="..."
+
+# Zhipu AI
+export ZHIPU_API_KEY="..."
 ```
 
 Add to your `.bashrc`, `.zshrc`, or `.env` file for persistence.
@@ -306,6 +332,47 @@ pr-agent analyze --branch origin/feature-branch
 - **Wrong branch detected**: Set `git.defaultBranch` in config or use `--branch` flag
 - **GitHub API errors**: Ensure `GITHUB_TOKEN` is valid, or rely on git fallback
 - **Custom default branch**: Configure it explicitly: `pr-agent config --set git.defaultBranch=origin/your-branch`
+
+
+## UI Dashboard
+
+The **PeeR-Agent Dashboard** provides a visual analytics interface to track your team's code review performance, calculate ROI, and monitor code quality trends over time.
+
+### Features
+- **ROI Calculator**: Estimates money saved based on PR volume and automated review time.
+- **Quality Trends**: Visualizes complexity and risk scores over time.
+- **Contributors**: Tracks top PR creators and their average complexity.
+- **Recent Activity**: Live feed of analyzed PRs with risk/complexity scores.
+
+### 1. Standalone Mode (CLI)
+View analytics for your local analysis directly in your browser. This mode uses a local SQLite database (`pr-agent.db`) to persist your analysis history.
+
+```bash
+# Launch the dashboard
+npm run cli dashboard
+
+# Launch on a specific port (default: 3000)
+npm run cli dashboard -- -p 3001
+```
+
+Once running, the dashboard automatically opens in your default browser at `http://localhost:3000`.
+
+### 2. Server Deployment
+When deployed as a GitHub App or long-running server (e.g., on a VPS or cloud instance), the dashboard acts as the application's home page.
+
+#### Configuration
+- **Port**: Defaults to `3000`. Set via `PORT` environment variable.
+- **Database**: Stores data in `pr-agent.db` in the root directory. Ensure the application has **write access** to this file/directory.
+
+```bash
+# Start the server
+npm run build
+npm start
+```
+
+Access the dashboard at `http://YOUR_SERVER_IP:3000/`.
+
+**Note on Persistence**: The dashboard relies on `pr-agent.db`. If you are deploying to an ephemeral environment (like Heroku or Serverless), you will lose your history on restart unless you persist this file.
 
 ## Architecture Documentation Integration
 
@@ -351,6 +418,112 @@ When you run `pr-agent analyze`, it automatically:
 1. **Detects `.arch-docs` folder** in your repository
 2. **Extracts relevant sections** based on your PR changes
 3. **Provides context** to the AI about your architecture
+
+## Static Analysis Integration
+
+PR Agent integrates with [Semgrep](https://semgrep.dev) for comprehensive static analysis, detecting security vulnerabilities and code quality issues.
+
+### Prerequisites
+
+Install Semgrep on your system:
+
+```bash
+# macOS
+brew install semgrep
+
+# Linux
+pip install semgrep
+
+# Or use Docker
+docker pull semgrep/semgrep
+```
+
+For more installation options, visit: https://semgrep.dev/docs/getting-started/
+
+### Configuration
+
+Static analysis is configured during setup:
+
+```bash
+pr-agent config --init
+```
+
+You'll be prompted to:
+1. Select your **primary programming language** (TypeScript, Python, Java, Go, etc.)
+2. Specify your **framework** (React, Django, Express, etc.)
+3. Enable or disable **static analysis**
+
+**Manual Configuration:**
+
+```bash
+# Enable static analysis
+pr-agent config --set analysis.enableStaticAnalysis=true
+
+# Set language
+pr-agent config --set analysis.language=typescript
+
+# Set framework
+pr-agent config --set analysis.framework=react
+```
+
+### How It Works
+
+When static analysis is enabled:
+
+1. **Semgrep runs** automatically during PR analysis
+2. **Findings are filtered** to only include changed files
+3. **AI agent analyzes** the Semgrep results
+4. **Risks are integrated** into the overall assessment
+5. **Recommendations** are generated based on findings
+
+### Supported Languages
+
+- **TypeScript** / JavaScript
+- **Python** (Django, Flask)
+- **Java** (Spring)
+- **Go**
+- **Rust**
+- **C#** (.NET)
+- **Ruby** (Rails)
+- **PHP** (Laravel)
+
+### Output Example
+
+```
+🔬 Static Analysis (Semgrep)
+
+Total findings: 12
+  • Errors: 3
+  • Warnings: 9
+
+Critical Issues:
+
+  1. [ERROR] Potential SQL injection vulnerability
+     File: src/database/query.ts:45
+     Rule: typescript.lang.security.sql-injection
+     
+  2. [ERROR] Hardcoded credentials detected
+     File: src/config/database.ts:12
+     Rule: generic.secrets.hardcoded-credentials
+     
+  3. [ERROR] Use of eval() is dangerous
+     File: src/utils/parser.ts:89
+     Rule: javascript.lang.security.eval-detected
+```
+
+### Disabling Static Analysis
+
+If you don't have Semgrep installed or want to skip it:
+
+```bash
+# Disable globally
+pr-agent config --set analysis.enableStaticAnalysis=false
+
+# Or skip in config during setup
+# Select "No" when prompted for static analysis
+```
+
+**Note:** Static analysis will automatically be skipped if Semgrep is not installed.
 4. **Identifies violations** of documented patterns or guidelines
 5. **Suggests improvements** aligned with your architecture
 
@@ -398,11 +571,150 @@ Key insights from arch-docs integration:
 
 ### Benefits of Arch-Docs Integration
 
-✅ **Context-Aware Analysis** - AI understands your specific architecture  
-✅ **Pattern Enforcement** - Detects violations of documented patterns  
-✅ **Security Alignment** - Checks against your security guidelines  
-✅ **Consistency** - Ensures PRs follow established conventions  
+✅ **Context-Aware Analysis** - AI understands your specific architecture
+✅ **Pattern Enforcement** - Detects violations of documented patterns
+✅ **Security Alignment** - Checks against your security guidelines
+✅ **Consistency** - Ensures PRs follow established conventions
 ✅ **Better Recommendations** - Suggestions aligned with your architecture
+
+## Peer Review Integration
+
+PR Agent can integrate with Jira to provide intelligent peer review analysis that validates your PR against linked tickets and acceptance criteria.
+
+### Overview
+
+When enabled, the peer review feature acts like a **senior developer reviewing your PR**:
+
+- **Extracts ticket references** from PR title, branch name, or commit messages
+- **Fetches ticket details** from Jira (description, acceptance criteria, story points)
+- **Rates ticket quality** to identify poorly-defined requirements
+- **Validates implementation** against derived requirements
+- **Provides verdict** with blockers, warnings, and recommendations
+
+### Setup
+
+1. **Configure Jira credentials** in `.pragent.config.json`:
+
+```json
+{
+  "peerReview": {
+    "enabled": true,
+    "provider": "jira",
+    "instanceUrl": "https://your-company.atlassian.net",
+    "email": "your-email@company.com",
+    "apiToken": "your-jira-api-token",
+    "defaultProject": "PROJ",
+    "analyzeAcceptanceCriteria": true,
+    "rateTicketQuality": true,
+    "checkScopeCreep": true
+  }
+}
+```
+
+2. **Get a Jira API Token**:
+   - Go to [Atlassian Account Settings](https://id.atlassian.com/manage-profile/security/api-tokens)
+   - Click "Create API token"
+   - Copy the token to your config
+
+3. **Reference tickets in your PR**:
+   - PR title: `feat(PROJ-123): Add new feature`
+   - Branch name: `feature/PROJ-123-add-feature`
+   - Commit message: `PROJ-123: implement feature`
+
+### Usage
+
+```bash
+# Run analysis with peer review
+pr-agent analyze
+
+# The peer review runs automatically if enabled in config
+# Or enable it for a single run:
+pr-agent analyze --peer-review
+```
+
+### Example Output
+
+```
+═══════════════════════════════════════════════════════════════
+                    🔍 PEER REVIEW ANALYSIS
+═══════════════════════════════════════════════════════════════
+
+📋 LINKED TICKET
+───────────────────────────────────────────────────────────────
+   Key:    PROJ-123
+   Title:  Add user authentication
+   Type:   STORY
+   Status: In Progress
+   Points: 5
+
+📊 TICKET QUALITY RATING
+───────────────────────────────────────────────────────────────
+   Overall Score: 🟢 85/100 (GOOD)
+
+   Dimension Scores:
+   • Description Clarity:     🟢 ████████░░ 85
+   • Acceptance Criteria:     🟢 █████████░ 90
+   • Testability:             🟡 ███████░░░ 75
+   • Scope Definition:        🟢 ████████░░ 80
+
+✅ REQUIREMENTS VALIDATION
+───────────────────────────────────────────────────────────────
+   Compliance: 🟢 92%
+
+   📊 REQUIREMENT STATUS:
+   ✅ Implement login endpoint with JWT tokens
+   ✅ Add password validation (min 8 chars)
+   🟡 Create logout endpoint
+      └─ Endpoint exists but doesn't invalidate tokens
+   ✅ Store hashed passwords in database
+
+   ❌ COVERAGE GAPS:
+   🟡 [MINOR] Token invalidation not implemented
+      └─ Impact: Users cannot fully logout, tokens remain valid
+
+🎯 PEER REVIEW VERDICT
+───────────────────────────────────────────────────────────────
+   ✅ APPROVED (Confidence: 85%)
+
+   The PR implements the core authentication functionality as specified.
+   Minor gaps in token invalidation should be addressed in a follow-up.
+
+   Scores:
+   • Implementation Completeness: 🟢 ████████░░ 88
+   • Quality Score:               🟢 ████████░░ 82
+
+   💡 RECOMMENDATIONS:
+      • Add token invalidation on logout
+      • Consider adding rate limiting
+      • Add integration tests for auth flow
+
+═══════════════════════════════════════════════════════════════
+```
+
+### Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable peer review integration |
+| `provider` | string | `"jira"` | Issue tracker provider (currently only Jira) |
+| `instanceUrl` | string | - | Your Jira instance URL |
+| `email` | string | - | Your Jira account email |
+| `apiToken` | string | - | Jira API token |
+| `defaultProject` | string | - | Default project key for ticket extraction |
+| `analyzeAcceptanceCriteria` | boolean | `true` | Validate against acceptance criteria |
+| `rateTicketQuality` | boolean | `true` | Rate ticket definition quality |
+| `generateTestSuggestions` | boolean | `true` | Generate test suggestions |
+| `checkScopeCreep` | boolean | `true` | Detect scope creep in PRs |
+| `includeTicketDetails` | boolean | `true` | Show ticket details in output |
+| `verbose` | boolean | `false` | Enable verbose output |
+
+### Benefits
+
+✅ **Requirement Validation** - Ensures PRs implement what the ticket specifies
+✅ **Quality Gate** - Catches incomplete implementations before review
+✅ **Ticket Quality Feedback** - Identifies poorly-defined requirements
+✅ **Scope Creep Detection** - Flags changes outside ticket scope
+✅ **Senior Developer Perspective** - Catches edge cases and missing behaviors
 
 ## GitHub Action Usage
 
@@ -436,13 +748,22 @@ You need to create a GitHub Actions workflow file in your repository to enable P
          - uses: actions/checkout@v4
    
          - name: Run PR Analyzer
-           uses: techdebtgpt/pr-agent@v1.0.1
+           uses: techdebtgpt/pr-agent@v1.1
            with:
              config-path: .pr-analyzer.yml
            env:
+             # Use one of these API keys (depending on your provider)
              ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+             # OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+             # GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+             
+             # Optional: Specify provider and model
+             # AI_PROVIDER: anthropic  # Options: anthropic, openai, google
+             # AI_MODEL: claude-sonnet-4-5-20250929
+             
              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
    ```
+   > **Important**: Make sure to use the latest release tag for `techdebtgpt/pr-agent@`. Replace `@v1.1` with the latest version tag from the [releases page](https://github.com/techdebtgpt/pr-agent/releases). For example, if the latest release is `v1.2`, use `techdebtgpt/pr-agent@v1.2`.
 
 3. Commit and push the workflow file to your repository:
    ```bash
@@ -507,34 +828,48 @@ Once set up, PR Agent automatically runs on:
 ### What Happens
 
 1. **PR Opened/Updated**: When a PR is created or updated, the workflow triggers
-2. **Fetch Changes**: The action retrieves all file changes (diffs) from the PR
-3. **Architecture Context**: Loads relevant sections from `.arch-docs` (if available)
-4. **AI Analysis**: Sends the diff with architecture context to the AI for analysis
-5. **Post Comment**: Posts a comprehensive analysis comment on the PR
+2. **Fetch Changes**: The action retrieves all file changes (diffs) from the PR using GitHub API
+3. **Static Analysis**: Runs Semgrep analysis (if enabled) to detect security vulnerabilities and code quality issues
+4. **Architecture Context**: Loads relevant sections from `.arch-docs` (if available)
+5. **AI Analysis**: Uses LangChain agent to analyze the diff with architecture context and Semgrep findings
+6. **Format Results**: Formats findings in a unified Semgrep-style format, sorted by severity (critical first)
 
 ### Example Output
 
 When PR Agent analyzes your pull request, it posts a comment like:
 
 ```markdown
-## 🤖 AI Analysis
+## 🤖 AI Analysis (PR Agent by TechDebtGPT)
 
-### Summary
+### 📋 Summary
 This PR refactors the authentication middleware to use JWT tokens instead of session-based auth. It introduces a new TokenService class and updates all route handlers to use the new authentication method.
 
-### Potential Risks
-- The migration from session to JWT may break existing authenticated users
-- No token expiration handling is implemented in the TokenService
-- Error handling in the authenticate middleware could expose sensitive information
+### 💡 Quick Actions
 
-### Complexity: 4/5
-This is a significant architectural change affecting multiple parts of the application. Careful testing of all authenticated endpoints is recommended.
+  1. 🔴 `src/middleware/auth.ts:45` - CRITICAL [Semgrep]
+     🔴 **Critical**: Detected potential security vulnerability in token validation. Missing expiration check could allow expired tokens to be used.
 
-### Recommendations
-- Add integration tests for the new authentication flow
-- Implement token refresh mechanism
-- Review error messages to ensure no sensitive data leaks
+  2. 🟡 `src/services/token.ts:23` - WARNING [AI]
+     🟡 **Warning**: No token expiration handling is implemented in the TokenService. Consider adding token refresh mechanism.
+
+  3. 🔴 - CRITICAL [AI]
+     🔴 **Critical**: The migration from session to JWT may break existing authenticated users. Add integration tests for the new authentication flow.
+
+  4. 🟡 - WARNING [AI]
+     🟡 **Warning**: Error handling in the authenticate middleware could expose sensitive information. Review error messages to ensure no sensitive data leaks.
+
+_2 more issues found._
+
+---
+_Total tokens used: 28,870_
 ```
+
+**Key Features of the Output:**
+- **Unified Format**: Both Semgrep and AI findings use the same consistent format
+- **Sorted by Severity**: Critical issues appear first, followed by warnings
+- **Source Labeling**: Each finding is labeled with `[Semgrep]` or `[AI]` to show its origin
+- **File References**: Fixes include file path and line number for easy navigation
+- **Actionable Recommendations**: AI-generated recommendations provide specific guidance
 
 ## Development
 
@@ -629,7 +964,11 @@ pr-agent/
 │   │   ├── anthropic.provider.ts
 │   │   ├── openai.provider.ts
 │   │   ├── google.provider.ts
+│   │   ├── zhipu.provider.ts
 │   │   └── factory.ts
+│   ├── issue-tracker/               # Issue tracker integrations
+│   │   ├── jira-mcp-client.ts       # Jira API client
+│   │   └── peer-review-integration.ts
 │   ├── tools/                       # Agent tools
 │   │   ├── pr-analysis-tools.ts
 │   │   └── index.ts
@@ -663,10 +1002,11 @@ pr-agent/
 1. **Workflow Setup**: The `.github/workflows/pr-analyzer.yml` file defines when and how PR Agent runs
 2. **Trigger**: GitHub Action triggers automatically on PR events (`opened`, `synchronize`, `reopened`)
 3. **Fetch Diffs**: Uses GitHub API to retrieve all changed files and their diffs
-4. **Arch-Docs Integration**: Loads relevant architecture documentation from `.arch-docs`
-5. **AI Analysis**: Sends to AI with full context (diff + architecture)
-6. **Parse Response**: Extracts structured insights with architecture-aware recommendations
-7. **Post Comment**: Creates a formatted comment on the PR using GitHub API
+4. **Static Analysis**: Runs Semgrep analysis (if enabled) to detect security vulnerabilities in changed files
+5. **Arch-Docs Integration**: Loads relevant architecture documentation from `.arch-docs`
+6. **AI Analysis**: Uses LangChain agent to analyze diff with full context (diff + architecture + Semgrep findings)
+7. **Format Results**: Formats all findings (Semgrep + AI) in unified Semgrep-style format, sorted by severity
+8. **Post Comment**: Creates a formatted comment on the PR with Quick Actions section showing critical issues first
 
 ### Intelligent Agent System
 
@@ -749,10 +1089,11 @@ git diff main
 
 #### No Comments Posted
 
-- Verify API key secret is set correctly (e.g., `ANTHROPIC_API_KEY`)
-- Check workflow permissions include `pull-requests: write`
+- Verify API key secret is set correctly (e.g., `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_API_KEY`)
+- Check workflow permissions include `pull-requests: write` and `issues: write`
 - Review Action logs for error messages
-- Ensure the AI provider matches the API key (Anthropic for Claude, OpenAI for GPT, etc.)
+- Ensure the AI provider matches the API key (Anthropic for Claude, OpenAI for GPT, Google for Gemini)
+- Verify `GITHUB_TOKEN` is available (automatically provided by GitHub Actions)
 
 #### Analysis Failed
 
@@ -817,6 +1158,13 @@ Best for: Quick analysis and cost-conscious usage
 - **gemini-ultra** - Most capable Gemini model
 
 Best for: Alternative to Claude/GPT with competitive performance
+
+### Zhipu AI
+
+- **claude-sonnet-4-20250514** - Via Anthropic-compatible API
+- **glm-4** - Zhipu's native model
+
+Best for: Users in China or those preferring Zhipu's platform with Claude-compatible models
 
 ## Common Use Cases
 

@@ -7,6 +7,9 @@ import { loadUserConfig, getApiKey } from '../utils/config-loader.js';
 import { archDocsExists } from '../../utils/arch-docs-parser.js';
 import { resolveDefaultBranch } from '../../utils/branch-resolver.js';
 import { ConfigurationError, GitHubAPIError, GitError } from '../../utils/errors.js';
+import { createPeerReviewIntegration, formatPeerReviewOutput, } from '../../issue-tracker/index.js';
+import { ProviderFactory } from '../../providers/index.js';
+import { saveAnalysis } from '../../db/index.js';
 /**
  * Determine which files should be skipped during analysis
  */
@@ -181,6 +184,60 @@ async function getPRTitle() {
     }
 }
 /**
+ * Get repository info from git remote URL
+ */
+function getRepoInfo() {
+    try {
+        const remoteUrl = execSync('git remote get-url origin', { encoding: 'utf-8' }).trim();
+        // Handle SSH format: git@github.com:owner/repo.git
+        // Handle HTTPS format: https://github.com/owner/repo.git
+        const sshMatch = remoteUrl.match(/git@[^:]+:([^/]+)\/(.+?)(?:\.git)?$/);
+        if (sshMatch) {
+            return { owner: sshMatch[1], name: sshMatch[2] };
+        }
+        const httpsMatch = remoteUrl.match(/https?:\/\/[^/]+\/([^/]+)\/(.+?)(?:\.git)?$/);
+        if (httpsMatch) {
+            return { owner: httpsMatch[1], name: httpsMatch[2] };
+        }
+        // Fallback to current directory name
+        return { owner: 'local', name: process.cwd().split(/[\\/]/).pop() || 'unknown' };
+    }
+    catch {
+        return { owner: 'local', name: process.cwd().split(/[\\/]/).pop() || 'unknown' };
+    }
+}
+/**
+ * Get git author from config
+ */
+function getGitAuthor() {
+    try {
+        return execSync('git config user.name', { encoding: 'utf-8' }).trim() || 'unknown';
+    }
+    catch {
+        return 'unknown';
+    }
+}
+/**
+ * Extract PR number from branch name if it follows common patterns
+ * e.g., feature/PR-123, fix-123, 123-feature
+ */
+function extractPRNumber(branchName, title) {
+    // Try to extract from branch name
+    if (branchName) {
+        const branchMatch = branchName.match(/(?:PR-?|#)?(\d+)/i);
+        if (branchMatch)
+            return parseInt(branchMatch[1], 10);
+    }
+    // Try to extract from title
+    if (title) {
+        const titleMatch = title.match(/#(\d+)/);
+        if (titleMatch)
+            return parseInt(titleMatch[1], 10);
+    }
+    // Generate a timestamp-based "PR number" for local analysis
+    return Math.floor(Date.now() / 1000) % 100000;
+}
+/**
  * Estimate diff size in tokens
  */
 function estimateDiffSize(diff) {
@@ -232,6 +289,7 @@ export async function analyzePR(options = {}) {
         }
         const provider = (options.provider || config.ai?.provider || 'anthropic').toLowerCase();
         const apiKey = getApiKey(provider, config);
+        const model = options.model || config.ai?.model;
         if (!apiKey) {
             spinner.fail('No API key found');
             console.error(chalk.yellow('💡  Please set it in one of these ways:'));
@@ -240,6 +298,10 @@ export async function analyzePR(options = {}) {
             console.error(chalk.gray('      - Anthropic (Claude): export ANTHROPIC_API_KEY="your-api-key"'));
             console.error(chalk.gray('      - OpenAI (GPT): export OPENAI_API_KEY="your-api-key"'));
             console.error(chalk.gray('      - Google (Gemini): export GOOGLE_API_KEY="your-api-key"'));
+            console.error(chalk.gray('      - Zhipu (GLM): export ZHIPU_API_KEY="your-api-key"'));
+            if (options.verbose) {
+                console.error(chalk.gray(`   Debug: Provider=${provider}, Config apiKeys=${JSON.stringify(config.apiKeys || {})}`));
+            }
             process.exit(1);
         }
         spinner.succeed(`Using AI provider: ${provider}`);
@@ -345,7 +407,6 @@ export async function analyzePR(options = {}) {
         else if (options.archDocs && !hasArchDocs) {
             console.log(chalk.yellow('⚠️  --arch-docs flag specified but no .arch-docs folder found\n'));
         }
-        const model = options.model || config.ai?.model;
         const agent = new PRAnalyzerAgent({
             provider: provider,
             apiKey,
@@ -354,9 +415,63 @@ export async function analyzePR(options = {}) {
         const result = await agent.analyze(diff, title, mode, {
             useArchDocs: useArchDocs && hasArchDocs,
             repoPath: process.cwd(),
+            language: config.analysis?.language,
+            framework: config.analysis?.framework,
+            enableStaticAnalysis: config.analysis?.enableStaticAnalysis !== false,
         });
         // Display results
         displayAgentResults(result, mode, options.verbose || false);
+        // Save analysis results to local database for dashboard
+        try {
+            const repoInfo = getRepoInfo();
+            const author = getGitAuthor();
+            let branchName;
+            try {
+                branchName = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
+            }
+            catch {
+                // ignore
+            }
+            const prNumber = extractPRNumber(branchName, title);
+            // Calculate overall complexity from file analyses
+            let overallComplexity = 1;
+            if (result.fileAnalyses && result.fileAnalyses.size > 0) {
+                const complexities = Array.from(result.fileAnalyses.values()).map((f) => f.complexity || 1);
+                overallComplexity = Math.round(complexities.reduce((a, b) => a + b, 0) / complexities.length);
+            }
+            saveAnalysis({
+                pr_number: prNumber,
+                repo_owner: repoInfo.owner,
+                repo_name: repoInfo.name,
+                author: author,
+                title: title || 'Untitled Analysis',
+                complexity: overallComplexity,
+                risks_count: result.fixes?.filter((f) => f.severity === 'critical' || f.severity === 'warning').length || 0,
+                risks: JSON.stringify(result.fixes?.filter((f) => f.severity === 'critical' || f.severity === 'warning').map((f) => f.comment) || []),
+                recommendations: JSON.stringify(result.recommendations || []),
+            });
+            if (options.verbose) {
+                console.log(chalk.gray(`   Analysis saved to local database (PR #${prNumber})`));
+            }
+        }
+        catch (saveError) {
+            if (options.verbose) {
+                console.log(chalk.yellow(`   Warning: Could not save to local database: ${saveError.message}`));
+            }
+        }
+        // Run Peer Review if enabled (via flag or config)
+        const peerReviewEnabled = options.peerReview || config.peerReview?.enabled;
+        if (options.verbose) {
+            console.log(chalk.gray(`\n   Debug: peerReviewEnabled=${peerReviewEnabled}, options.peerReview=${options.peerReview}, config.peerReview?.enabled=${config.peerReview?.enabled}`));
+        }
+        if (peerReviewEnabled) {
+            // Pass the same provider config to peer review so it uses the same LLM
+            await runPeerReview(config, diff, title, result, options.verbose || false, {
+                provider,
+                apiKey,
+                model,
+            });
+        }
     }
     catch (error) {
         spinner.fail('Analysis failed');
@@ -410,87 +525,81 @@ function displayAgentResults(result, mode, verbose) {
     cleanSummary = cleanSummary.replace(/^#+\s*PR Analysis:?\s*/im, '');
     cleanSummary = cleanSummary.replace(/^##\s*Summary\s*/im, '');
     cleanSummary = cleanSummary.trim();
+    const criticalFixes = result.fixes?.filter((f) => f.severity === 'critical') || [];
+    const warningFixes = result.fixes?.filter((f) => f.severity === 'warning') || [];
+    const totalFixes = result.fixes?.length || 0;
     if (mode.summary) {
-        console.log(chalk.cyan.bold('📋 Overall Summary\n'));
+        console.log(chalk.cyan.bold('📋 Summary\n'));
         console.log(chalk.white(cleanSummary));
         console.log('\n');
     }
-    // Group risks by file for better organization
-    if (mode.risks && result.fileAnalyses.size > 0) {
-        const fileEntries = Array.from(result.fileAnalyses.entries());
-        const filesWithRisks = fileEntries.filter(([_, analysis]) => analysis.risks.length > 0);
-        if (filesWithRisks.length > 0) {
-            console.log(chalk.yellow.bold(`⚠️  Risks by File (${filesWithRisks.length} files with risks)\n`));
-            filesWithRisks.forEach(([path, analysis]) => {
-                console.log(chalk.cyan(`  ${path}`));
-                analysis.risks.forEach((risk, i) => {
-                    if (typeof risk === 'string') {
-                        const cleanRisk = risk.replace(/^\[File: [^\]]+\]\s*/, '');
-                        console.log(chalk.white(`    ${i + 1}. ${cleanRisk}`));
-                    }
-                    else if (typeof risk === 'object' && risk.description) {
-                        console.log(chalk.white(`    ${i + 1}. ${risk.description}`));
-                        if (risk.archDocsReference) {
-                            console.log(chalk.gray(`       📚 From ${risk.archDocsReference.source}:`));
-                            console.log(chalk.gray(`       "${risk.archDocsReference.excerpt}"`));
-                            console.log(chalk.yellow(`       → ${risk.archDocsReference.reason}`));
-                        }
-                    }
-                });
+    // Combined quick actions section - only fixes with line numbers (for PR comments)
+    // Filter: only critical/warning, must have line number, sort critical first
+    const prCommentFixes = result.fixes
+        ?.filter((f) => (f.severity === 'critical' || f.severity === 'warning') &&
+        f.line !== undefined &&
+        f.line !== null)
+        .sort((a, b) => {
+        // Sort: critical first, then warning
+        if (a.severity === 'critical' && b.severity !== 'critical')
+            return -1;
+        if (a.severity !== 'critical' && b.severity === 'critical')
+            return 1;
+        return 0;
+    }) || [];
+    // Add recommendations (from AI) - only if we have critical issues
+    const recommendations = (criticalFixes.length > 0 && result.recommendations)
+        ? result.recommendations.slice(0, 3)
+        : [];
+    if (prCommentFixes.length > 0 || recommendations.length > 0) {
+        console.log(chalk.cyan.bold(`💡 Quick Actions\n`));
+        let actionIndex = 1;
+        // Show fixes with line numbers (sorted critical first)
+        prCommentFixes.forEach((fix) => {
+            const severityIcon = fix.severity === 'critical' ? chalk.red('🔴') : chalk.yellow('🟡');
+            const severityLabel = fix.severity === 'critical' ? chalk.red.bold('CRITICAL') : chalk.yellow.bold('WARNING');
+            const sourceLabel = fix.source === 'semgrep' ? chalk.blue(' [Semgrep]') : chalk.magenta(' [AI]');
+            const shortComment = fix.comment.split('\n')[0].substring(0, 120);
+            console.log(chalk.white(`  ${actionIndex}. ${severityIcon} ${chalk.cyan(`\`${fix.file}:${fix.line}\``)} - ${severityLabel}${sourceLabel}`));
+            console.log(chalk.gray(`     ${shortComment}${fix.comment.length > 120 ? '...' : ''}`));
+            console.log('');
+            actionIndex++;
+        });
+        // Show recommendations if we have critical fixes - format to match Semgrep
+        if (recommendations.length > 0) {
+            recommendations.forEach((rec) => {
+                // Parse recommendation to extract severity
+                let severityIcon = chalk.yellow('🟡');
+                let severityLabel = chalk.yellow.bold('WARNING');
+                let recText = rec;
+                // Check if recommendation starts with **CRITICAL: or **WARNING:
+                if (rec.match(/^\*\*CRITICAL:/i)) {
+                    severityIcon = chalk.red('🔴');
+                    severityLabel = chalk.red.bold('CRITICAL');
+                    recText = rec.replace(/^\*\*CRITICAL:\s*/i, '').replace(/\*\*/g, '');
+                }
+                else if (rec.match(/^\*\*WARNING:/i)) {
+                    severityIcon = chalk.yellow('🟡');
+                    severityLabel = chalk.yellow.bold('WARNING');
+                    recText = rec.replace(/^\*\*WARNING:\s*/i, '').replace(/\*\*/g, '');
+                }
+                else if (rec.toLowerCase().includes('critical')) {
+                    severityIcon = chalk.red('🔴');
+                    severityLabel = chalk.red.bold('CRITICAL');
+                }
+                const sourceLabel = chalk.magenta(' [AI]');
+                const shortComment = recText.substring(0, 120);
+                // Format exactly like Semgrep: Number. Icon - LABEL [Source]
+                console.log(chalk.white(`  ${actionIndex}. ${severityIcon} - ${severityLabel}${sourceLabel}`));
+                // Indented comment line with severity prefix
+                console.log(chalk.gray(`     ${severityIcon} **${severityLabel.includes('CRITICAL') ? 'Critical' : 'Warning'}**: ${shortComment}${recText.length > 120 ? '...' : ''}`));
                 console.log('');
+                actionIndex++;
             });
         }
-        else if (result.overallRisks.length > 0) {
-            console.log(chalk.yellow.bold('⚠️  Overall Risks\n'));
-            result.overallRisks.forEach((risk, i) => {
-                if (typeof risk === 'string') {
-                    console.log(chalk.white(`  ${i + 1}. ${risk}`));
-                }
-                else if (typeof risk === 'object' && risk.description) {
-                    console.log(chalk.white(`  ${i + 1}. ${risk.description}`));
-                    if (risk.archDocsReference) {
-                        console.log(chalk.gray(`     📚 From ${risk.archDocsReference.source}:`));
-                        console.log(chalk.gray(`     "${risk.archDocsReference.excerpt}"`));
-                        console.log(chalk.yellow(`     → ${risk.archDocsReference.reason}`));
-                    }
-                }
-            });
-            console.log('\n');
-        }
-        else {
-            console.log(chalk.yellow.bold('⚠️  Risks\n'));
-            console.log(chalk.white('  None identified\n\n'));
-        }
-    }
-    if (mode.complexity) {
-        console.log(chalk.magenta.bold(`📊 Overall Complexity: ${result.overallComplexity}/5\n`));
-    }
-    // Show file-level complexity summary if requested
-    if ((mode.summary || mode.complexity) && result.fileAnalyses.size > 0) {
-        console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
-        console.log(chalk.cyan.bold(`\n📁 File Analysis (${result.fileAnalyses.size} files)\n`));
-        const fileEntries = Array.from(result.fileAnalyses.entries());
-        const highComplexity = fileEntries.filter(([_, analysis]) => analysis.complexity >= 4);
-        const mediumComplexity = fileEntries.filter(([_, analysis]) => analysis.complexity === 3);
-        if (highComplexity.length > 0) {
-            console.log(chalk.red.bold('🔴 High Complexity:\n'));
-            highComplexity.forEach(([path, analysis]) => {
-                console.log(chalk.white(`  • ${path} (${analysis.complexity}/5)`));
-                if (mode.risks && analysis.risks.length > 0) {
-                    console.log(chalk.gray(`    ${analysis.risks.length} risk${analysis.risks.length > 1 ? 's' : ''} found`));
-                }
-            });
-            console.log('');
-        }
-        if (mediumComplexity.length > 0 && mediumComplexity.length <= 10) {
-            console.log(chalk.yellow.bold('🟡 Medium Complexity:\n'));
-            mediumComplexity.slice(0, 5).forEach(([path, analysis]) => {
-                console.log(chalk.white(`  • ${path} (${analysis.complexity}/5)`));
-            });
-            if (mediumComplexity.length > 5) {
-                console.log(chalk.gray(`  ... and ${mediumComplexity.length - 5} more`));
-            }
-            console.log('');
+        const totalFilteredFixes = result.fixes?.filter((f) => (f.severity === 'critical' || f.severity === 'warning') && f.line !== undefined && f.line !== null).length || 0;
+        if (totalFilteredFixes > prCommentFixes.length) {
+            console.log(chalk.gray(`  ... and ${totalFilteredFixes - prCommentFixes.length} more issues\n`));
         }
     }
     // Show recommendations if available
@@ -539,9 +648,126 @@ function displayAgentResults(result, mode, verbose) {
             console.log('');
         }
     }
+    else {
+        console.log(chalk.green.bold('✅ Status\n'));
+        console.log(chalk.white('  No critical issues found.\n\n'));
+    }
+    // Token count at the end
     if (result.totalTokensUsed) {
-        console.log(chalk.gray(`\nTotal tokens used: ${result.totalTokensUsed.toLocaleString()}`));
+        console.log(chalk.gray(`Total tokens used: ${result.totalTokensUsed.toLocaleString()}`));
     }
     console.log(chalk.gray('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'));
+}
+/**
+ * Run Peer Review analysis against linked Jira tickets
+ *
+ * This extends the PR analysis with business context validation:
+ * - Fetches linked Jira tickets from PR title/branch
+ * - Rates ticket quality
+ * - Validates implementation against derived requirements
+ * - Provides senior-dev style verdict
+ */
+async function runPeerReview(config, diff, title, prAnalysisResult, verbose, providerOptions) {
+    const spinner = ora('Running Peer Review analysis...').start();
+    try {
+        // Create LLM using the same provider as main analysis
+        const llm = ProviderFactory.createChatModel({
+            provider: providerOptions.provider,
+            apiKey: providerOptions.apiKey,
+            model: providerOptions.model,
+            temperature: 0.2,
+            maxTokens: 4000,
+        });
+        // Create peer review integration from config, passing the LLM
+        const peerReviewConfig = config.peerReview || {};
+        const integration = createPeerReviewIntegration(peerReviewConfig, llm);
+        if (!integration.isEnabled()) {
+            spinner.warn('Peer Review enabled but not configured. Add Jira settings to config.');
+            console.log(chalk.gray('   Run: pr-agent config --set peerReview.instanceUrl=https://your.atlassian.net'));
+            console.log(chalk.gray('   Or configure MCP: peerReview.useMcp=true'));
+            if (verbose) {
+                console.log(chalk.gray(`   Debug: peerReviewConfig=${JSON.stringify(peerReviewConfig)}`));
+            }
+            return;
+        }
+        // Get branch name for ticket extraction
+        let branchName;
+        try {
+            branchName = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
+        }
+        catch {
+            // Ignore - branch name is optional
+        }
+        // Get commit messages for ticket extraction
+        let commitMessages = [];
+        try {
+            const commits = execSync('git log --oneline -10', { encoding: 'utf-8' });
+            commitMessages = commits.trim().split('\n');
+        }
+        catch {
+            // Ignore
+        }
+        // Parse diff to get file info
+        const files = parseDiffFiles(diff);
+        spinner.text = 'Extracting ticket references...';
+        // Run peer review analysis
+        const result = await integration.analyze({
+            prTitle: title || 'Untitled PR',
+            prDescription: undefined, // Could extract from git commit body
+            branchName,
+            commitMessages,
+            diff,
+            files,
+            prSummary: prAnalysisResult.summary,
+            prRisks: prAnalysisResult.overallRisks,
+            prComplexity: prAnalysisResult.overallComplexity,
+        });
+        spinner.succeed('Peer Review analysis complete');
+        // Display peer review results
+        const output = formatPeerReviewOutput(result);
+        if (output) {
+            console.log(output);
+        }
+        if (verbose && result.ticketReferences.length > 0) {
+            console.log(chalk.gray('Ticket references found:'));
+            result.ticketReferences.forEach((ref) => {
+                console.log(chalk.gray(`  - ${ref.key} (from ${ref.source}, confidence: ${ref.confidence}%)`));
+            });
+        }
+    }
+    catch (error) {
+        spinner.fail('Peer Review analysis failed');
+        console.error(chalk.yellow(`⚠️  ${error.message || 'Unknown error'}`));
+        console.log(chalk.gray('   The main PR analysis completed successfully.'));
+        console.log(chalk.gray('   Peer Review is an optional enhancement - check Jira configuration.'));
+    }
+}
+/**
+ * Parse diff to extract file information
+ */
+function parseDiffFiles(diff) {
+    const files = [];
+    const filePattern = /^diff --git a\/(.+?) b\/(.+?)$/gm;
+    let match;
+    while ((match = filePattern.exec(diff)) !== null) {
+        const filePath = match[2] !== '/dev/null' ? match[2] : match[1];
+        const isNew = match[1] === '/dev/null' || match[1].startsWith('dev/null');
+        const isDeleted = match[2] === '/dev/null';
+        // Count additions and deletions (simplified)
+        const fileStart = match.index;
+        const nextFileMatch = filePattern.exec(diff);
+        const fileEnd = nextFileMatch ? nextFileMatch.index : diff.length;
+        filePattern.lastIndex = match.index + 1; // Reset to continue from after current match
+        const fileContent = diff.substring(fileStart, fileEnd);
+        const additions = (fileContent.match(/^\+[^+]/gm) || []).length;
+        const deletions = (fileContent.match(/^-[^-]/gm) || []).length;
+        files.push({
+            path: filePath,
+            additions,
+            deletions,
+            status: isNew ? 'added' : isDeleted ? 'deleted' : 'modified',
+        });
+    }
+    return files;
 }
 //# sourceMappingURL=analyze.command.js.map

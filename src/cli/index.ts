@@ -6,6 +6,7 @@ import { Command } from 'commander';
 import { analyzePR } from './commands/analyze.command.js';
 import { registerConfigCommand } from './commands/config.command.js';
 import { registerHelpCommand } from './commands/help.command.js';
+import { registerDashboardCommand } from './commands/dashboard.command.js';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
@@ -35,7 +36,7 @@ program
   .option('--staged', 'Analyze staged changes (git diff --staged)')
   .option('--branch <name>', 'Analyze against specific branch')
   .option('--title <text>', 'PR title (auto-detected from git)')
-  .option('--provider <provider>', 'AI provider (anthropic|openai|google)')
+  .option('--provider <provider>', 'AI provider (anthropic|openai|google|zhipu)')
   .option('--model <model>', 'Specific model to use')
   .option('--agent', 'Force intelligent agent (recommended for large diffs)')
   .option('--summary', 'Show summary only')
@@ -49,6 +50,9 @@ program
 
 // Config command
 registerConfigCommand(program);
+
+// Dashboard command
+registerDashboardCommand(program);
 
 // Help command
 registerHelpCommand(program);

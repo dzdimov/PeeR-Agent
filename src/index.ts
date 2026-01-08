@@ -1,5 +1,12 @@
 import { Probot } from 'probot';
+import express, { Request, Response, Router } from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { PRAnalyzerAgent } from './agents/pr-analyzer-agent.js';
+import { saveAnalysis, getDashboardStats, getRecentAnalyses } from './db/index.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const provider = (process.env.AI_PROVIDER || 'anthropic').toLowerCase() as 'anthropic' | 'openai' | 'google';
 const apiKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || process.env.GOOGLE_API_KEY;
@@ -11,57 +18,150 @@ const model = process.env.AI_MODEL;
 function formatAnalysisForGitHub(result: any): string {
   let output = '';
 
-  // Summary
+  const criticalFixes = result.fixes?.filter((f: any) => f.severity === 'critical') || [];
+  const warningFixes = result.fixes?.filter((f: any) => f.severity === 'warning') || [];
+  const totalFixes = result.fixes?.length || 0;
+
+  // Concise summary
   if (result.summary) {
     output += `### 📋 Summary\n${result.summary}\n\n`;
   }
 
-  // Risks
-  if (result.overallRisks && result.overallRisks.length > 0) {
-    output += `### ⚠️ Risks Identified\n`;
-    result.overallRisks.forEach((risk: string, i: number) => {
-      output += `${i + 1}. ${risk}\n`;
-    });
-    output += '\n';
-  }
-
-  // Complexity
-  if (result.overallComplexity) {
-    output += `### 📊 Complexity Score: ${result.overallComplexity}/5\n\n`;
-  }
-
-  // Recommendations
-  if (result.recommendations && result.recommendations.length > 0) {
-    output += `### 💡 Recommendations\n`;
-    result.recommendations.forEach((rec: string, i: number) => {
-      output += `${i + 1}. ${rec}\n`;
-    });
-    output += '\n';
-  }
-
-  // File-level details (top 5 most complex)
-  if (result.fileAnalyses && result.fileAnalyses.size > 0) {
-    const files = Array.from(result.fileAnalyses.entries()) as Array<[string, any]>;
-    const sortedFiles = files
-      .sort((a, b) => b[1].complexity - a[1].complexity)
-      .slice(0, 5);
-
-    if (sortedFiles.length > 0) {
-      output += `### 📁 Files of Interest\n`;
-      sortedFiles.forEach(([path, analysis]) => {
-        output += `- **${path}** (complexity: ${analysis.complexity}/5)\n`;
-        if (analysis.risks && analysis.risks.length > 0) {
-          output += `  - ⚠️ ${analysis.risks.join(', ')}\n`;
-        }
+  // Combined quick actions section (fixes + recommendations)
+  const allActions: Array<{type: 'fix' | 'recommendation'; content: any; source: string}> = [];
+  
+  // Add fixes (from Semgrep or AI)
+  if (totalFixes > 0) {
+    const topFixes = [...criticalFixes, ...warningFixes].slice(0, 5);
+    topFixes.forEach((fix: any) => {
+      allActions.push({
+        type: 'fix',
+        content: fix,
+        source: fix.source || 'ai',
       });
+    });
+  }
+  
+  // Add recommendations (from AI)
+  if (result.recommendations && result.recommendations.length > 0) {
+    result.recommendations.slice(0, 3).forEach((rec: string) => {
+      allActions.push({
+        type: 'recommendation',
+        content: rec,
+        source: 'ai',
+      });
+    });
+  }
+  
+  if (allActions.length > 0) {
+    output += `### 💡 Quick Actions\n\n`;
+    
+    let actionIndex = 1;
+    allActions.forEach((action) => {
+      if (action.type === 'fix') {
+        const fix = action.content;
+        const severityIcon = fix.severity === 'critical' ? '🔴' : '🟡';
+        const severityLabel = fix.severity === 'critical' ? 'CRITICAL' : 'WARNING';
+        const sourceLabel = action.source === 'semgrep' ? ' [Semgrep]' : ' [AI]';
+        const shortComment = fix.comment.split('\n')[0].substring(0, 150);
+        
+        // Format exactly like Semgrep: Number. Icon `file:line` - LABEL [Source]
+        output += `  ${actionIndex}. ${severityIcon} \`${fix.file}:${fix.line}\` - ${severityLabel}${sourceLabel}\n`;
+        // Indented comment line
+        output += `     ${shortComment}${fix.comment.length > 150 ? '...' : ''}\n\n`;
+      } else {
+        // Format recommendations to match Semgrep format
+        const rec = action.content;
+        const sourceLabel = action.source === 'semgrep' ? ' [Semgrep]' : ' [AI]';
+        
+        // Parse recommendation to extract severity
+        let severityIcon = '🟡';
+        let severityLabel = 'WARNING';
+        let recText = rec;
+        
+        // Check if recommendation starts with **CRITICAL: or **WARNING:
+        if (rec.match(/^\*\*CRITICAL:/i)) {
+          severityIcon = '🔴';
+          severityLabel = 'CRITICAL';
+          recText = rec.replace(/^\*\*CRITICAL:\s*/i, '').replace(/\*\*/g, '');
+        } else if (rec.match(/^\*\*WARNING:/i)) {
+          severityIcon = '🟡';
+          severityLabel = 'WARNING';
+          recText = rec.replace(/^\*\*WARNING:\s*/i, '').replace(/\*\*/g, '');
+        } else if (rec.toLowerCase().includes('critical')) {
+          severityIcon = '🔴';
+          severityLabel = 'CRITICAL';
+        }
+        
+        // Format exactly like Semgrep: Number. Icon - LABEL [Source]
+        output += `  ${actionIndex}. ${severityIcon} - ${severityLabel}${sourceLabel}\n`;
+        // Indented comment line with severity prefix
+        output += `     ${severityIcon} **${severityLabel === 'CRITICAL' ? 'Critical' : 'Warning'}**: ${recText.substring(0, 150)}${recText.length > 150 ? '...' : ''}\n\n`;
+      }
+      actionIndex++;
+    });
+    
+    if (totalFixes > 5) {
+      output += `_${totalFixes - 5} more issues found._\n\n`;
     }
+  } else {
+    output += `### ✅ Status\n\nNo critical issues found.\n\n`;
+  }
+
+  // Token count at the end
+  if (result.totalTokensUsed) {
+    output += `\n---\n_Total tokens used: ${result.totalTokensUsed.toLocaleString()}_`;
   }
 
   return output;
 }
 
-export default (app: Probot) => {
+export default (app: Probot, { getRouter }: { getRouter?: (path?: string) => Router } = {}) => {
   app.log.info('🤖 PR Agent (LangChain) started');
+
+  // Dashboard Routes
+  if (getRouter) {
+    // Determine public path for static assets
+    const finalPublicPath = path.join(__dirname, 'public');
+    
+    const router = getRouter('/dashboard');
+    if (router) {
+      // Serve static files
+      router.use(express.static(finalPublicPath));
+      
+      // API Endpoints
+      router.get('/api/stats', (req: Request, res: Response) => {
+        try {
+          const stats = getDashboardStats();
+          const recent = getRecentAnalyses();
+          res.json({ stats, recent });
+        } catch (error) {
+          app.log.error('Error fetching stats:', error);
+          res.status(500).json({ error: 'Failed to fetch stats' });
+        }
+      });
+
+      router.get('/', (req: Request, res: Response) => {
+        res.sendFile(path.join(finalPublicPath, 'index.html'));
+      });
+      
+      app.log.info('NOTE: Dashboard available at /dashboard');
+    }
+
+    // Handle root path
+    const rootRouter = getRouter();
+    if (rootRouter) {
+        // Serve static files at root
+        rootRouter.use(express.static(finalPublicPath));
+
+        // Serve index.html at root
+        rootRouter.get('/', (req: Request, res: Response) => {
+            res.sendFile(path.join(finalPublicPath, 'index.html'));
+        });
+        
+        app.log.info('Dashboard configured at root /');
+    }
+  }
 
   app.on(['pull_request.opened', 'pull_request.synchronize'], async (context) => {
     const { pull_request: pr, repository } = context.payload;
@@ -85,6 +185,33 @@ export default (app: Probot) => {
       });
       const result = await agent.analyze(diff, pr.title);
 
+      // Save to Database
+      try {
+        // Calculate overall complexity from file analyses
+        let overallComplexity = 1;
+        if (result.fileAnalyses && result.fileAnalyses.size > 0) {
+          const complexities = Array.from(result.fileAnalyses.values()).map((f: any) => f.complexity || 1);
+          overallComplexity = Math.round(complexities.reduce((a: number, b: number) => a + b, 0) / complexities.length);
+        }
+
+        // Get risks from fixes with critical/warning severity
+        const risks = result.fixes?.filter((f: any) => f.severity === 'critical' || f.severity === 'warning').map((f: any) => f.comment) || [];
+
+        saveAnalysis({
+          pr_number: pr.number,
+          repo_owner: repository.owner.login,
+          repo_name: repository.name,
+          author: pr.user.login,
+          title: pr.title,
+          complexity: overallComplexity,
+          risks_count: risks.length,
+          risks: JSON.stringify(risks),
+          recommendations: JSON.stringify(result.recommendations || [])
+        });
+      } catch (dbError) {
+        app.log.error('Failed to save analysis to DB:', dbError);
+      }
+
       // Format the analysis for GitHub comment
       const summary = formatAnalysisForGitHub(result);
       
@@ -101,16 +228,6 @@ export default (app: Probot) => {
       app.log.error('Error analyzing PR:', error);
     }
   });
-
-  // TODO: Re-implement code suggestions using the new agent's code suggestion tool
-  // The old code suggestion implementation has been removed
-  // To implement this feature:
-  // 1. Use the agent's createCodeSuggestionTool() from tools/pr-analysis-tools.ts
-  // 2. Call the agent with the tool to generate code fixes based on reviewer comments
-  // 
-  // app.on(['pull_request_review_comment.created', 'pull_request_review_comment.edited'], async (context) => {
-  //   // Implementation goes here
-  // });
 };
 
 async function getPRDiffs(context: any): Promise<string> {
