@@ -167,3 +167,10 @@ dist/*
 
 # ArchDoc configuration (contains API keys)
 .archdoc.config.json
+
+# SQLite database (local analysis history)
+pr-agent.db
+*.db
+
+# Local MCP configuration (contains machine-specific paths)
+.mcp.json
