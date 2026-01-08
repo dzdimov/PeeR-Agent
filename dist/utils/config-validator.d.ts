@@ -27,9 +27,9 @@ export declare const UserConfigSchema: z.ZodObject<{
     analysis: z.ZodOptional<z.ZodObject<{
         defaultMode: z.ZodOptional<z.ZodEnum<{
             summary: "summary";
-            full: "full";
-            risks: "risks";
             complexity: "complexity";
+            risks: "risks";
+            full: "full";
         }>>;
         maxCost: z.ZodOptional<z.ZodNumber>;
         autoDetectAgent: z.ZodOptional<z.ZodBoolean>;

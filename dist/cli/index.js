@@ -5,6 +5,7 @@ import { Command } from 'commander';
 import { analyzePR } from './commands/analyze.command.js';
 import { registerConfigCommand } from './commands/config.command.js';
 import { registerHelpCommand } from './commands/help.command.js';
+import { registerDashboardCommand } from './commands/dashboard.command.js';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 // __dirname workaround for ES modules
@@ -40,6 +41,8 @@ program
     .action(analyzePR);
 // Config command
 registerConfigCommand(program);
+// Dashboard command
+registerDashboardCommand(program);
 // Help command
 registerHelpCommand(program);
 // Parse CLI arguments

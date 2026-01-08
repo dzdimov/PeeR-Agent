@@ -59,6 +59,7 @@ pr-agent help                       # Show help
   - [Quick Start](#quick-start)
   - [Analyze Command](#analyze-command)
   - [Configuration](#configuration)
+- [UI Dashboard](#ui-dashboard)
 - [Architecture Documentation Integration](#architecture-documentation-integration)
 - [Static Analysis Integration](#static-analysis-integration)
 - [Peer Review Integration](#peer-review-integration)
@@ -331,6 +332,47 @@ pr-agent analyze --branch origin/feature-branch
 - **Wrong branch detected**: Set `git.defaultBranch` in config or use `--branch` flag
 - **GitHub API errors**: Ensure `GITHUB_TOKEN` is valid, or rely on git fallback
 - **Custom default branch**: Configure it explicitly: `pr-agent config --set git.defaultBranch=origin/your-branch`
+
+
+## UI Dashboard
+
+The **PeeR-Agent Dashboard** provides a visual analytics interface to track your team's code review performance, calculate ROI, and monitor code quality trends over time.
+
+### Features
+- **ROI Calculator**: Estimates money saved based on PR volume and automated review time.
+- **Quality Trends**: Visualizes complexity and risk scores over time.
+- **Contributors**: Tracks top PR creators and their average complexity.
+- **Recent Activity**: Live feed of analyzed PRs with risk/complexity scores.
+
+### 1. Standalone Mode (CLI)
+View analytics for your local analysis directly in your browser. This mode uses a local SQLite database (`pr-agent.db`) to persist your analysis history.
+
+```bash
+# Launch the dashboard
+npm run cli dashboard
+
+# Launch on a specific port (default: 3000)
+npm run cli dashboard -- -p 3001
+```
+
+Once running, the dashboard automatically opens in your default browser at `http://localhost:3000`.
+
+### 2. Server Deployment
+When deployed as a GitHub App or long-running server (e.g., on a VPS or cloud instance), the dashboard acts as the application's home page.
+
+#### Configuration
+- **Port**: Defaults to `3000`. Set via `PORT` environment variable.
+- **Database**: Stores data in `pr-agent.db` in the root directory. Ensure the application has **write access** to this file/directory.
+
+```bash
+# Start the server
+npm run build
+npm start
+```
+
+Access the dashboard at `http://YOUR_SERVER_IP:3000/`.
+
+**Note on Persistence**: The dashboard relies on `pr-agent.db`. If you are deploying to an ephemeral environment (like Heroku or Serverless), you will lose your history on restart unless you persist this file.
 
 ## Architecture Documentation Integration
 

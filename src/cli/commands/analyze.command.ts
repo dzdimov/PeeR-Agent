@@ -7,6 +7,7 @@ import { loadUserConfig, getApiKey } from '../utils/config-loader.js';
 import { archDocsExists } from '../../utils/arch-docs-parser.js';
 import { resolveDefaultBranch } from '../../utils/branch-resolver.js';
 import { ConfigurationError, GitHubAPIError, GitError } from '../../utils/errors.js';
+
 import {
   createPeerReviewIntegration,
   formatPeerReviewOutput,
@@ -14,6 +15,9 @@ import {
 } from '../../issue-tracker/index.js';
 import { ProviderFactory, type SupportedProvider } from '../../providers/index.js';
 import { Fix } from '../../types/agent.types.js';
+
+import { saveAnalysis } from '../../db/index.js';
+
 
 interface AnalyzeOptions {
   diff?: string;
