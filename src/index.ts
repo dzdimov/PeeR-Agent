@@ -3,6 +3,7 @@ import express, { Request, Response, Router } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { PRAnalyzerAgent } from './agents/pr-analyzer-agent.js';
+import { CouncilAgent } from './agents/council-agent.js';
 import { saveAnalysis, getDashboardStats, getRecentAnalyses } from './db/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -163,6 +164,71 @@ export default (app: Probot, { getRouter }: { getRouter?: (path?: string) => Rou
     }
   }
 
+  // --- Council Logic ---
+  app.on('issue_comment.created', async (context) => {
+      const { comment, repository, issue } = context.payload;
+      
+      // 1. Check trigger command "active the council"
+      const body = comment.body.toLowerCase();
+      if (!body.includes('assemble the council')) return;
+
+      // 2. Verify it's a PR
+      if (!issue.pull_request) return;
+
+      app.log.info(`⚖️ Council assembled for PR #${issue.number}`);
+
+      // 3. Rate Limit / Cost Check (Optional, implied by explicit command)
+      // Acknowledge
+      await context.octokit.reactions.createForIssueComment({
+        owner: repository.owner.login,
+        repo: repository.name,
+        comment_id: comment.id,
+        content: 'eyes'
+      });
+
+      try {
+        // 4. Fetch diff manually (since we are in issue_comment context)
+        const { data: files } = await context.octokit.pulls.listFiles({
+          owner: repository.owner.login,
+          repo: repository.name,
+          pull_number: issue.number
+        });
+        const diff = files.map((f: any) => `--- ${f.filename}\n${f.patch}`).join('\n');
+
+        // 5. Instantiate Council
+        // We reuse the global provider/model config for the "Chairperson"
+        const council = new CouncilAgent(provider, apiKey);
+
+        const metadata = {
+            title: issue.title,
+            author: issue.user.login,
+            repo: `${repository.owner.login}/${repository.name}`
+        };
+
+        const result = await council.analyze(diff, metadata);
+        const summary = formatAnalysisForGitHub(result);
+
+        const councilHeader = `## 🧙‍♂️ The AI Council Has Spoken\n> *Consensus review by multiple AI models*\n\n`;
+        
+        await context.octokit.issues.createComment({
+          owner: repository.owner.login,
+          repo: repository.name,
+          issue_number: issue.number,
+          body: councilHeader + summary
+        });
+
+      } catch (error) {
+        app.log.error('Council Execution Failed:', error);
+        await context.octokit.issues.createComment({
+          owner: repository.owner.login,
+          repo: repository.name,
+          issue_number: issue.number,
+          body: `**Council Adjourned**: An error occurred. ${error}`
+        });
+      }
+  });
+  // ---------------------
+
   app.on(['pull_request.opened', 'pull_request.synchronize'], async (context) => {
     const { pull_request: pr, repository } = context.payload;
     
@@ -213,7 +279,13 @@ export default (app: Probot, { getRouter }: { getRouter?: (path?: string) => Rou
       }
 
       // Format the analysis for GitHub comment
-      const summary = formatAnalysisForGitHub(result);
+      let summary = formatAnalysisForGitHub(result);
+
+      // --- Council Suggestion --
+      if (overallComplexity >= 4) {
+          summary += `\n\n---\n> 🧙‍♂️ **Effectively Complex**: This PR has a high complexity score. To initiate a multi-model consensus review, reply to this comment with: \`assemble the council\`.`;
+      }
+      // ------------------------
       
       await context.octokit.issues.createComment({
         owner: repository.owner.login,
