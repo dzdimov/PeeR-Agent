@@ -187,15 +187,25 @@ export default (app: Probot, { getRouter }: { getRouter?: (path?: string) => Rou
 
       // Save to Database
       try {
+        // Calculate overall complexity from file analyses
+        let overallComplexity = 1;
+        if (result.fileAnalyses && result.fileAnalyses.size > 0) {
+          const complexities = Array.from(result.fileAnalyses.values()).map((f: any) => f.complexity || 1);
+          overallComplexity = Math.round(complexities.reduce((a: number, b: number) => a + b, 0) / complexities.length);
+        }
+
+        // Get risks from fixes with critical/warning severity
+        const risks = result.fixes?.filter((f: any) => f.severity === 'critical' || f.severity === 'warning').map((f: any) => f.comment) || [];
+
         saveAnalysis({
           pr_number: pr.number,
           repo_owner: repository.owner.login,
           repo_name: repository.name,
           author: pr.user.login,
           title: pr.title,
-          complexity: result.overallComplexity || 0,
-          risks_count: result.overallRisks ? result.overallRisks.length : 0,
-          risks: JSON.stringify(result.overallRisks || []),
+          complexity: overallComplexity,
+          risks_count: risks.length,
+          risks: JSON.stringify(risks),
           recommendations: JSON.stringify(result.recommendations || [])
         });
       } catch (dbError) {

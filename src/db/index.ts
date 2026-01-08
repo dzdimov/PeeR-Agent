@@ -1,8 +1,26 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 
-const DB_PATH = path.join(process.cwd(), 'pr-agent.db');
+// Get the directory where this module is located, then navigate to project root
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Resolve DB path relative to the project root (from src/db or dist/db)
+// This ensures the database is always in the same location regardless of cwd
+function resolveDbPath(): string {
+  // Try environment variable first
+  if (process.env.PR_AGENT_DB_PATH) {
+    return process.env.PR_AGENT_DB_PATH;
+  }
+
+  // Navigate up from src/db or dist/db to project root
+  const projectRoot = path.resolve(__dirname, '..', '..');
+  return path.join(projectRoot, 'pr-agent.db');
+}
+
+const DB_PATH = resolveDbPath();
 
 export interface AnalysisRecord {
   id?: number;

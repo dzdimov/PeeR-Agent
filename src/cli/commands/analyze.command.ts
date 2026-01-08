@@ -228,6 +228,59 @@ async function getPRTitle(): Promise<string | undefined> {
 }
 
 /**
+ * Get repository info from git remote URL
+ */
+function getRepoInfo(): { owner: string; name: string } {
+  try {
+    const remoteUrl = execSync('git remote get-url origin', { encoding: 'utf-8' }).trim();
+    // Handle SSH format: git@github.com:owner/repo.git
+    // Handle HTTPS format: https://github.com/owner/repo.git
+    const sshMatch = remoteUrl.match(/git@[^:]+:([^/]+)\/(.+?)(?:\.git)?$/);
+    if (sshMatch) {
+      return { owner: sshMatch[1], name: sshMatch[2] };
+    }
+    const httpsMatch = remoteUrl.match(/https?:\/\/[^/]+\/([^/]+)\/(.+?)(?:\.git)?$/);
+    if (httpsMatch) {
+      return { owner: httpsMatch[1], name: httpsMatch[2] };
+    }
+    // Fallback to current directory name
+    return { owner: 'local', name: process.cwd().split(/[\\/]/).pop() || 'unknown' };
+  } catch {
+    return { owner: 'local', name: process.cwd().split(/[\\/]/).pop() || 'unknown' };
+  }
+}
+
+/**
+ * Get git author from config
+ */
+function getGitAuthor(): string {
+  try {
+    return execSync('git config user.name', { encoding: 'utf-8' }).trim() || 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+/**
+ * Extract PR number from branch name if it follows common patterns
+ * e.g., feature/PR-123, fix-123, 123-feature
+ */
+function extractPRNumber(branchName?: string, title?: string): number {
+  // Try to extract from branch name
+  if (branchName) {
+    const branchMatch = branchName.match(/(?:PR-?|#)?(\d+)/i);
+    if (branchMatch) return parseInt(branchMatch[1], 10);
+  }
+  // Try to extract from title
+  if (title) {
+    const titleMatch = title.match(/#(\d+)/);
+    if (titleMatch) return parseInt(titleMatch[1], 10);
+  }
+  // Generate a timestamp-based "PR number" for local analysis
+  return Math.floor(Date.now() / 1000) % 100000;
+}
+
+/**
  * Estimate diff size in tokens
  */
 function estimateDiffSize(diff: string): number {
@@ -429,6 +482,46 @@ export async function analyzePR(options: AnalyzeOptions = {}): Promise<void> {
 
     // Display results
     displayAgentResults(result, mode, options.verbose || false);
+
+    // Save analysis results to local database for dashboard
+    try {
+      const repoInfo = getRepoInfo();
+      const author = getGitAuthor();
+      let branchName: string | undefined;
+      try {
+        branchName = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
+      } catch {
+        // ignore
+      }
+      const prNumber = extractPRNumber(branchName, title);
+
+      // Calculate overall complexity from file analyses
+      let overallComplexity = 1;
+      if (result.fileAnalyses && result.fileAnalyses.size > 0) {
+        const complexities = Array.from(result.fileAnalyses.values()).map((f: any) => f.complexity || 1);
+        overallComplexity = Math.round(complexities.reduce((a: number, b: number) => a + b, 0) / complexities.length);
+      }
+
+      saveAnalysis({
+        pr_number: prNumber,
+        repo_owner: repoInfo.owner,
+        repo_name: repoInfo.name,
+        author: author,
+        title: title || 'Untitled Analysis',
+        complexity: overallComplexity,
+        risks_count: result.fixes?.filter((f: Fix) => f.severity === 'critical' || f.severity === 'warning').length || 0,
+        risks: JSON.stringify(result.fixes?.filter((f: Fix) => f.severity === 'critical' || f.severity === 'warning').map((f: Fix) => f.comment) || []),
+        recommendations: JSON.stringify(result.recommendations || []),
+      });
+
+      if (options.verbose) {
+        console.log(chalk.gray(`   Analysis saved to local database (PR #${prNumber})`));
+      }
+    } catch (saveError: any) {
+      if (options.verbose) {
+        console.log(chalk.yellow(`   Warning: Could not save to local database: ${saveError.message}`));
+      }
+    }
 
     // Run Peer Review if enabled (via flag or config)
     const peerReviewEnabled = options.peerReview || config.peerReview?.enabled;
