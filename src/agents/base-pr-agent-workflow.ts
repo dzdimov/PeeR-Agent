@@ -808,12 +808,11 @@ Only include CRUCIAL fixes that matter. If no significant issues, return an empt
     }
 
     // Create concise prompt for quick reading
-    const summaryPrompt = `Analyze this pull request and provide a BRIEF, scannable summary (2-3 sentences max).
+    const summaryPrompt = `Analyze this pull request and provide a BRIEF, scannable summary (maximum 2 sentences).
 
 Focus on:
-- **What**: What does this PR do? (one sentence)
-- **Why**: What problem does it solve or what feature does it add? (one sentence)
-- **Impact**: What parts of the codebase are affected? (one sentence if significant)
+- **What**: What does this PR do?
+- **Why**: What problem does it solve?
 
 PR Title: ${context.title || 'No title provided'}
 ${context.language ? `Language: ${context.language}${context.framework ? ` (${context.framework})` : ''}` : ''}
