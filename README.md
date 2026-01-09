@@ -12,7 +12,9 @@ PR Agent analyzes your code changes and provides:
 - **Complexity Rating**: A 1-5 scale rating of complexity with file-level breakdown
 - **Actionable Insights**: Specific recommendations based on your codebase
 - **Architecture-Aware Analysis**: Leverages your `.arch-docs` for context-aware reviews
+- **LLM Council**: Multi-model consensus reviews using a "Panel & Chairperson" architecture
 - **Peer Review Integration**: Validates PRs against linked Jira tickets and acceptance criteria
+- **Analytics Dashboard**: Vizualize PR metrics, code quality trends, and team performance
 - **Static Analysis**: Semgrep integration for security vulnerabilities and code quality issues
 
 ## Features
@@ -60,6 +62,7 @@ pr-agent help                       # Show help
   - [Analyze Command](#analyze-command)
   - [Configuration](#configuration)
 - [UI Dashboard](#ui-dashboard)
+- [The LLM Council](#the-llm-council)
 - [Architecture Documentation Integration](#architecture-documentation-integration)
 - [Static Analysis Integration](#static-analysis-integration)
 - [Peer Review Integration](#peer-review-integration)
@@ -335,6 +338,40 @@ pr-agent analyze --branch origin/feature-branch
 
 
 ## UI Dashboard
+
+The UI Dashboard provides a visual overview of your project's health and the performance of the PeeR-Agent.
+
+### Usage
+To start the dashboard locally:
+```bash
+npm run cli dashboard
+```
+Then open [http://localhost:3000](http://localhost:3000).
+
+## The LLM Council
+
+For complex PRs, a single AI opinion might not be enough. The **LLM Council** assembles a diverse panel of AI models to review your code simultaneously and synthesizing a consensus report.
+
+### How it Works
+1.  **Selection**: The system identifies active providers based on your environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.).
+2.  **Parallel Review**: Independent instances of the Agent run on the PR diff using different underlying models (e.g., Claude 3.5 Sonnet, GPT-4o, Gemini 1.5 Pro).
+3.  **Synthesis**: A "Chairperson" agent (your primary model) reads all reports, resolves conflicts, averages complexity scores, and produces a final authoritative JSON report.
+
+### Triggering the Council
+Whenever the Agent detects a PR with **High Complexity (Score ≥ 4)**, it will append a footer to its review comment on GitHub.
+*   **Manual Trigger**: Reply to the review comment with:
+    > `assemble the council`
+*   The bot will react with 👀 and begin the multi-model analysis.
+
+### Configuration
+To enable the Council, simply ensure you have **at least two** valid API keys in your environment variables:
+```bash
+export ANTHROPIC_API_KEY=sk-...
+export OPENAI_API_KEY=sk-...
+export GOOGLE_API_KEY=AI...
+```
+
+## Architecture Documentation Integration
 
 The **PeeR-Agent Dashboard** provides a visual analytics interface to track your team's code review performance, calculate ROI, and monitor code quality trends over time.
 
