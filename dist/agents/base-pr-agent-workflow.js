@@ -12,6 +12,7 @@ import { isTestFile, isCodeFile, detectTestFramework, generateTestTemplate, sugg
 import { isDevOpsFile, analyzeDevOpsFiles, } from '../tools/devops-cost-estimator.js';
 import { detectCoverageTool, readCoverageReport, } from '../tools/coverage-reporter.js';
 import { classifyProject, formatClassification, } from '../tools/project-classifier.js';
+import { getProjectClassification } from '../db/index.js';
 /**
  * Agent workflow state
  */
@@ -343,11 +344,19 @@ export class BasePRAgentWorkflow {
     async detectAndAnalyzeChangeTypes(files, context) {
         const result = {};
         // === PROJECT CLASSIFICATION ===
-        // Classify project type (business logic vs QA) to tailor recommendations
-        console.log(`🏗️  Classifying project type...`);
-        const classification = classifyProject(files.map(f => ({ filename: f.path, patch: f.diff })));
-        result.projectClassification = formatClassification(classification);
-        console.log(`   → Type: ${classification.projectType} (${(classification.confidence * 100).toFixed(0)}% confidence)`);
+        // Check DB cache first, only run classification if not cached (saves tokens)
+        const repoOwner = context.config?.repoOwner || 'local';
+        const repoName = context.config?.repoName || 'unknown';
+        let cachedClassification = getProjectClassification(repoOwner, repoName);
+        if (cachedClassification) {
+            // Use cached classification
+            result.projectClassification = cachedClassification;
+        }
+        else {
+            // Run classification and store for caching
+            const classification = classifyProject(files.map(f => ({ filename: f.path, patch: f.diff })));
+            result.projectClassification = formatClassification(classification);
+        }
         // Categorize files by type
         const codeFiles = files.filter(f => isCodeFile(f.path) && !isTestFile(f.path));
         const testFiles = files.filter(f => isTestFile(f.path));

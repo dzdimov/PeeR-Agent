@@ -407,6 +407,8 @@ export async function analyzePR(options = {}) {
         else if (options.archDocs && !hasArchDocs) {
             console.log(chalk.yellow('⚠️  --arch-docs flag specified but no .arch-docs folder found\n'));
         }
+        // Get repo info early so we can pass it to the agent for caching
+        const repoInfo = getRepoInfo();
         const agent = new PRAnalyzerAgent({
             provider: provider,
             apiKey,
@@ -415,12 +417,14 @@ export async function analyzePR(options = {}) {
         const result = await agent.analyze(diff, title, mode, {
             useArchDocs: useArchDocs && hasArchDocs,
             repoPath: process.cwd(),
+            repoOwner: repoInfo.owner,
+            repoName: repoInfo.name,
             language: config.analysis?.language,
             framework: config.analysis?.framework,
             enableStaticAnalysis: config.analysis?.enableStaticAnalysis !== false,
         });
         // Display results
-        displayAgentResults(result, mode, options.verbose || false);
+        displayAgentResults(result, mode, options.verbose || false, options.showClassification || false);
         // Save analysis results to local database for dashboard
         try {
             const repoInfo = getRepoInfo();
@@ -460,6 +464,8 @@ export async function analyzePR(options = {}) {
                 has_test_suggestions: (result.testSuggestions?.length ?? 0) > 0 ? 1 : 0,
                 test_suggestions_count: result.testSuggestions?.length ?? 0,
                 coverage_percentage: result.coverageReport?.overallPercentage,
+                // Project classification cache (v0.3.0)
+                project_classification: result.projectClassification,
             });
             if (options.verbose) {
                 console.log(chalk.gray(`   Analysis saved to local database (PR #${prNumber})`));
@@ -528,7 +534,7 @@ export async function analyzePR(options = {}) {
 /**
  * Display agent analysis results
  */
-function displayAgentResults(result, mode, verbose) {
+function displayAgentResults(result, mode, verbose, showClassification = false) {
     console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
     console.log(chalk.green.bold('\n✨  Agent Analysis Complete!\n'));
     // Clean summary - remove markdown headers and duplicates
@@ -544,8 +550,8 @@ function displayAgentResults(result, mode, verbose) {
         console.log(chalk.white(cleanSummary));
         console.log('\n');
     }
-    // Display project classification if available
-    if (result.projectClassification) {
+    // Display project classification only if explicitly requested
+    if (showClassification && result.projectClassification) {
         console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
         console.log(result.projectClassification);
     }

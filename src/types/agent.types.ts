@@ -164,6 +164,8 @@ export interface AgentResult {
   testSuggestions?: TestSuggestion[];
   devOpsCostEstimates?: DevOpsCostEstimate[];
   coverageReport?: CoverageReport;
+  // Project classification (v0.3.0)
+  projectClassification?: string;
 }
 
 // Alias for backward compatibility

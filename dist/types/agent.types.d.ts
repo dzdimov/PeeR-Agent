@@ -154,6 +154,7 @@ export interface AgentResult {
     testSuggestions?: TestSuggestion[];
     devOpsCostEstimates?: DevOpsCostEstimate[];
     coverageReport?: CoverageReport;
+    projectClassification?: string;
 }
 export type AgentAnalysisResult = AgentResult;
 export interface AgentMetadata {

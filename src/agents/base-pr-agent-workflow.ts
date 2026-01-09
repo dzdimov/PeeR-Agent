@@ -38,6 +38,7 @@ import {
   classifyProject,
   formatClassification,
 } from '../tools/project-classifier.js';
+import { getProjectClassification } from '../db/index.js';
 
 /**
  * Agent workflow state
@@ -444,13 +445,22 @@ export abstract class BasePRAgentWorkflow {
     } = {};
 
     // === PROJECT CLASSIFICATION ===
-    // Classify project type (business logic vs QA) to tailor recommendations
-    console.log(`🏗️  Classifying project type...`);
-    const classification = classifyProject(
-      files.map(f => ({ filename: f.path, patch: f.diff }))
-    );
-    result.projectClassification = formatClassification(classification);
-    console.log(`   → Type: ${classification.projectType} (${(classification.confidence * 100).toFixed(0)}% confidence)`);
+    // Check DB cache first, only run classification if not cached (saves tokens)
+    const repoOwner = (context.config?.repoOwner as string) || 'local';
+    const repoName = (context.config?.repoName as string) || 'unknown';
+
+    let cachedClassification = getProjectClassification(repoOwner, repoName);
+
+    if (cachedClassification) {
+      // Use cached classification
+      result.projectClassification = cachedClassification;
+    } else {
+      // Run classification and store for caching
+      const classification = classifyProject(
+        files.map(f => ({ filename: f.path, patch: f.diff }))
+      );
+      result.projectClassification = formatClassification(classification);
+    }
 
     // Categorize files by type
     const codeFiles = files.filter(f => isCodeFile(f.path) && !isTestFile(f.path));
@@ -506,20 +516,20 @@ export abstract class BasePRAgentWorkflow {
     // 1b. Existing tests → Test Enhancement Suggestions
     if (testFiles.length > 0 && codeFiles.length > 0) {
       console.log(`🔬 Analyzing ${testFiles.length} existing test file(s) for improvements...`);
-      
+
       const frameworkInfo = detectTestFramework(context.config?.repoPath as string || '.');
-      
+
       for (const testFile of testFiles) {
         // Find corresponding source file
         const baseName = testFile.path
           .replace(/\.(test|spec)\./i, '.')
           .replace(/^(test|tests|__tests__)\//i, '')
           .replace(/\/(test|tests|__tests__)\//i, '/');
-        
-        const sourceFile = codeFiles.find(f => 
+
+        const sourceFile = codeFiles.find(f =>
           f.path.includes(baseName.split('/').pop()?.replace(/\.[^.]+$/, '') || '')
         );
-        
+
         if (sourceFile && testFile.additions > 0) {
           // Analyze test quality and suggest enhancements
           const enhancement = analyzeTestQuality(
@@ -527,7 +537,7 @@ export abstract class BasePRAgentWorkflow {
             { path: sourceFile.path, diff: sourceFile.diff },
             frameworkInfo.framework
           );
-          
+
           if (enhancement.suggestions.length > 0) {
             // Add as test suggestion with enhancement flag
             result.testSuggestions = result.testSuggestions || [];
@@ -540,12 +550,12 @@ export abstract class BasePRAgentWorkflow {
               isEnhancement: true,
               existingTestFile: testFile.path,
             });
-            
+
             console.log(`   → Found ${enhancement.missingScenarios.length} missing scenario(s) in ${path.basename(testFile.path)}`);
           }
         }
       }
-      
+
       const enhancementCount = result.testSuggestions?.filter(s => s.isEnhancement).length || 0;
       if (enhancementCount > 0) {
         console.log(`✅ Generated ${enhancementCount} test enhancement suggestion(s)`);

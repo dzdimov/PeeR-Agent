@@ -197,6 +197,9 @@ pr-agent analyze --max-cost 10.0
 # Force agent mode for large diffs
 pr-agent analyze --agent
 
+# Show project classification (business logic vs QA)
+pr-agent analyze --show-classification
+
 # Specify PR title manually
 pr-agent analyze --title "Add new authentication system"
 ```

@@ -36,6 +36,7 @@ interface AnalyzeOptions {
   maxCost?: number;
   archDocs?: boolean;
   peerReview?: boolean; // Enable Jira peer review integration
+  showClassification?: boolean; // Show project type classification
 }
 
 interface AnalysisMode {
@@ -467,6 +468,9 @@ export async function analyzePR(options: AnalyzeOptions = {}): Promise<void> {
       console.log(chalk.yellow('⚠️  --arch-docs flag specified but no .arch-docs folder found\n'));
     }
 
+    // Get repo info early so we can pass it to the agent for caching
+    const repoInfo = getRepoInfo();
+
     const agent = new PRAnalyzerAgent({
       provider: provider,
       apiKey,
@@ -475,13 +479,15 @@ export async function analyzePR(options: AnalyzeOptions = {}): Promise<void> {
     const result = await agent.analyze(diff, title, mode, {
       useArchDocs: useArchDocs && hasArchDocs,
       repoPath: process.cwd(),
+      repoOwner: repoInfo.owner,
+      repoName: repoInfo.name,
       language: config.analysis?.language,
       framework: config.analysis?.framework,
       enableStaticAnalysis: config.analysis?.enableStaticAnalysis !== false,
     });
 
     // Display results
-    displayAgentResults(result, mode, options.verbose || false);
+    displayAgentResults(result, mode, options.verbose || false, options.showClassification || false);
 
     // Save analysis results to local database for dashboard
     try {
@@ -526,6 +532,8 @@ export async function analyzePR(options: AnalyzeOptions = {}): Promise<void> {
         has_test_suggestions: (result.testSuggestions?.length ?? 0) > 0 ? 1 : 0,
         test_suggestions_count: result.testSuggestions?.length ?? 0,
         coverage_percentage: result.coverageReport?.overallPercentage,
+        // Project classification cache (v0.3.0)
+        project_classification: result.projectClassification,
       });
 
       if (options.verbose) {
@@ -595,7 +603,7 @@ export async function analyzePR(options: AnalyzeOptions = {}): Promise<void> {
 /**
  * Display agent analysis results
  */
-function displayAgentResults(result: any, mode: AnalysisMode, verbose: boolean): void {
+function displayAgentResults(result: any, mode: AnalysisMode, verbose: boolean, showClassification: boolean = false): void {
   console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
   console.log(chalk.green.bold('\n✨  Agent Analysis Complete!\n'));
 
@@ -615,8 +623,8 @@ function displayAgentResults(result: any, mode: AnalysisMode, verbose: boolean):
     console.log('\n');
   }
 
-  // Display project classification if available
-  if (result.projectClassification) {
+  // Display project classification only if explicitly requested
+  if (showClassification && result.projectClassification) {
     console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
     console.log(result.projectClassification);
   }
@@ -624,9 +632,9 @@ function displayAgentResults(result: any, mode: AnalysisMode, verbose: boolean):
   // Combined quick actions section - only fixes with line numbers (for PR comments)
   // Filter: only critical/warning, must have line number, sort critical first
   const prCommentFixes = result.fixes
-    ?.filter((f: Fix) => 
-      (f.severity === 'critical' || f.severity === 'warning') && 
-      f.line !== undefined && 
+    ?.filter((f: Fix) =>
+      (f.severity === 'critical' || f.severity === 'warning') &&
+      f.line !== undefined &&
       f.line !== null
     )
     .sort((a: Fix, b: Fix) => {
@@ -635,24 +643,24 @@ function displayAgentResults(result: any, mode: AnalysisMode, verbose: boolean):
       if (a.severity !== 'critical' && b.severity === 'critical') return 1;
       return 0;
     }) || [];
-  
+
   // Add recommendations (from AI) - only if we have critical issues
-  const recommendations = (criticalFixes.length > 0 && result.recommendations) 
-    ? result.recommendations.slice(0, 3) 
+  const recommendations = (criticalFixes.length > 0 && result.recommendations)
+    ? result.recommendations.slice(0, 3)
     : [];
-  
+
   if (prCommentFixes.length > 0 || recommendations.length > 0) {
     console.log(chalk.cyan.bold(`💡 Quick Actions\n`));
 
     let actionIndex = 1;
-    
+
     // Show fixes with line numbers (sorted critical first)
     prCommentFixes.forEach((fix: Fix) => {
       const severityIcon = fix.severity === 'critical' ? chalk.red('🔴') : chalk.yellow('🟡');
       const severityLabel = fix.severity === 'critical' ? chalk.red.bold('CRITICAL') : chalk.yellow.bold('WARNING');
       const sourceLabel = fix.source === 'semgrep' ? chalk.blue(' [Semgrep]') : chalk.magenta(' [AI]');
       const shortComment = fix.comment.split('\n')[0].substring(0, 120);
-      
+
       console.log(chalk.white(`  ${actionIndex}. ${severityIcon} ${chalk.cyan(`\`${fix.file}:${fix.line}\``)} - ${severityLabel}${sourceLabel}`));
       console.log(chalk.gray(`     ${shortComment}${fix.comment.length > 120 ? '...' : ''}`));
       console.log('');
@@ -666,7 +674,7 @@ function displayAgentResults(result: any, mode: AnalysisMode, verbose: boolean):
         let severityIcon = chalk.yellow('🟡');
         let severityLabel = chalk.yellow.bold('WARNING');
         let recText = rec;
-        
+
         // Check if recommendation starts with **CRITICAL: or **WARNING:
         if (rec.match(/^\*\*CRITICAL:/i)) {
           severityIcon = chalk.red('🔴');
@@ -680,10 +688,10 @@ function displayAgentResults(result: any, mode: AnalysisMode, verbose: boolean):
           severityIcon = chalk.red('🔴');
           severityLabel = chalk.red.bold('CRITICAL');
         }
-        
+
         const sourceLabel = chalk.magenta(' [AI]');
         const shortComment = recText.substring(0, 120);
-        
+
         // Format exactly like Semgrep: Number. Icon - LABEL [Source]
         console.log(chalk.white(`  ${actionIndex}. ${severityIcon} - ${severityLabel}${sourceLabel}`));
         // Indented comment line with severity prefix
@@ -736,10 +744,10 @@ function displayAgentResults(result: any, mode: AnalysisMode, verbose: boolean):
       console.log(chalk.cyan('Stages influenced by arch-docs:'));
       result.archDocsImpact.influencedStages.forEach((stage: string) => {
         const stageEmoji = stage === 'file-analysis' ? '🔍' :
-                          stage === 'risk-detection' ? '⚠️' :
-                          stage === 'complexity-calculation' ? '📊' :
-                          stage === 'summary-generation' ? '📝' :
-                          stage === 'refinement' ? '🔄' : '✨';
+          stage === 'risk-detection' ? '⚠️' :
+            stage === 'complexity-calculation' ? '📊' :
+              stage === 'summary-generation' ? '📝' :
+                stage === 'refinement' ? '🔄' : '✨';
         console.log(chalk.white(`  ${stageEmoji} ${stage}`));
       });
       console.log('');
@@ -766,7 +774,7 @@ function displayAgentResults(result: any, mode: AnalysisMode, verbose: boolean):
   if (result.testSuggestions && result.testSuggestions.length > 0) {
     const newTests = result.testSuggestions.filter((s: any) => !s.isEnhancement);
     const enhancements = result.testSuggestions.filter((s: any) => s.isEnhancement);
-    
+
     // Show new test suggestions
     if (newTests.length > 0) {
       console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
@@ -793,7 +801,7 @@ function displayAgentResults(result: any, mode: AnalysisMode, verbose: boolean):
         }
       }
     }
-    
+
     // Show test enhancement suggestions
     if (enhancements.length > 0) {
       console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
