@@ -439,6 +439,11 @@ export async function analyzePR(options = {}) {
                 const complexities = Array.from(result.fileAnalyses.values()).map((f) => f.complexity || 1);
                 overallComplexity = Math.round(complexities.reduce((a, b) => a + b, 0) / complexities.length);
             }
+            // Calculate DevOps cost if estimates available
+            const devOpsCostMonthly = result.devOpsCostEstimates?.reduce((sum, e) => sum + (e.estimatedNewCost || 0), 0) || 0;
+            const devOpsResources = result.devOpsCostEstimates
+                ? JSON.stringify(result.devOpsCostEstimates)
+                : undefined;
             saveAnalysis({
                 pr_number: prNumber,
                 repo_owner: repoInfo.owner,
@@ -449,6 +454,12 @@ export async function analyzePR(options = {}) {
                 risks_count: result.fixes?.filter((f) => f.severity === 'critical' || f.severity === 'warning').length || 0,
                 risks: JSON.stringify(result.fixes?.filter((f) => f.severity === 'critical' || f.severity === 'warning').map((f) => f.comment) || []),
                 recommendations: JSON.stringify(result.recommendations || []),
+                // DevOps/Infrastructure cost tracking (v0.2.0)
+                devops_cost_monthly: devOpsCostMonthly > 0 ? devOpsCostMonthly : undefined,
+                devops_resources: devOpsResources,
+                has_test_suggestions: (result.testSuggestions?.length ?? 0) > 0 ? 1 : 0,
+                test_suggestions_count: result.testSuggestions?.length ?? 0,
+                coverage_percentage: result.coverageReport?.overallPercentage,
             });
             if (options.verbose) {
                 console.log(chalk.gray(`   Analysis saved to local database (PR #${prNumber})`));
@@ -532,6 +543,11 @@ function displayAgentResults(result, mode, verbose) {
         console.log(chalk.cyan.bold('📋 Summary\n'));
         console.log(chalk.white(cleanSummary));
         console.log('\n');
+    }
+    // Display project classification if available
+    if (result.projectClassification) {
+        console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+        console.log(result.projectClassification);
     }
     // Combined quick actions section - only fixes with line numbers (for PR comments)
     // Filter: only critical/warning, must have line number, sort critical first
@@ -655,6 +671,71 @@ function displayAgentResults(result, mode, verbose) {
     // Token count at the end
     if (result.totalTokensUsed) {
         console.log(chalk.gray(`Total tokens used: ${result.totalTokensUsed.toLocaleString()}`));
+    }
+    // Show test suggestions if available
+    if (result.testSuggestions && result.testSuggestions.length > 0) {
+        console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+        console.log(chalk.yellow.bold(`\n🧪 Test Suggestions (${result.testSuggestions.length} files need tests)\n`));
+        for (const suggestion of result.testSuggestions) {
+            console.log(chalk.cyan(`  📝 ${suggestion.forFile}`));
+            console.log(chalk.gray(`     Framework: ${suggestion.testFramework}`));
+            if (suggestion.testFilePath) {
+                console.log(chalk.gray(`     Suggested test file: ${suggestion.testFilePath}`));
+            }
+            console.log(chalk.white(`     ${suggestion.description}\n`));
+            if (suggestion.testCode) {
+                console.log(chalk.gray('     ┌─────────────────────────────────────────'));
+                const codeLines = suggestion.testCode.split('\n').slice(0, 10);
+                codeLines.forEach((line) => {
+                    console.log(chalk.gray('     │ ') + chalk.white(line));
+                });
+                if (suggestion.testCode.split('\n').length > 10) {
+                    console.log(chalk.gray('     │ ... (copy full code below)'));
+                }
+                console.log(chalk.gray('     └─────────────────────────────────────────\n'));
+            }
+        }
+    }
+    // Show coverage report if available
+    if (result.coverageReport && result.coverageReport.available) {
+        console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+        console.log(chalk.green.bold('\n📊 Test Coverage Report\n'));
+        const coverage = result.coverageReport;
+        if (coverage.overallPercentage !== undefined) {
+            const emoji = coverage.overallPercentage >= 80 ? '🟢' : coverage.overallPercentage >= 60 ? '🟡' : '🔴';
+            console.log(chalk.white(`  ${emoji} Overall Coverage: ${coverage.overallPercentage.toFixed(1)}%`));
+        }
+        if (coverage.lineCoverage !== undefined) {
+            console.log(chalk.gray(`     Lines: ${coverage.lineCoverage.toFixed(1)}%`));
+        }
+        if (coverage.branchCoverage !== undefined) {
+            console.log(chalk.gray(`     Branches: ${coverage.branchCoverage.toFixed(1)}%`));
+        }
+        if (coverage.delta !== undefined) {
+            const deltaEmoji = coverage.delta >= 0 ? '📈' : '📉';
+            const deltaColor = coverage.delta >= 0 ? chalk.green : chalk.red;
+            console.log(deltaColor(`  ${deltaEmoji} Coverage Delta: ${coverage.delta >= 0 ? '+' : ''}${coverage.delta.toFixed(1)}%`));
+        }
+        if (coverage.coverageTool) {
+            console.log(chalk.gray(`\n     Tool: ${coverage.coverageTool}`));
+        }
+        console.log('');
+    }
+    // Show DevOps cost estimates if available
+    if (result.devOpsCostEstimates && result.devOpsCostEstimates.length > 0) {
+        console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+        console.log(chalk.yellow.bold('\n💰 AWS Infrastructure Cost Estimates\n'));
+        let totalCost = 0;
+        for (const estimate of result.devOpsCostEstimates) {
+            const emoji = estimate.confidence === 'high' ? '🟢' : estimate.confidence === 'medium' ? '🟡' : '🔴';
+            console.log(chalk.white(`  ${emoji} ${estimate.resourceType.toUpperCase()}: ~$${estimate.estimatedNewCost.toFixed(2)}/month`));
+            if (estimate.details) {
+                console.log(chalk.gray(`     ${estimate.details}`));
+            }
+            totalCost += estimate.estimatedNewCost;
+        }
+        console.log(chalk.cyan.bold(`\n  📊 Total Estimated Impact: ~$${totalCost.toFixed(2)}/month`));
+        console.log(chalk.gray('\n  ⚠️  Estimates are approximate. Actual costs depend on usage and configuration.\n'));
     }
     console.log(chalk.gray('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'));
 }

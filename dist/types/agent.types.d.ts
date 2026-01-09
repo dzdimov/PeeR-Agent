@@ -51,6 +51,57 @@ export interface RiskItem {
         reason: string;
     };
 }
+/**
+ * Code suggestion for fixing issues found during review
+ */
+export interface CodeSuggestion {
+    filePath: string;
+    lineRange: {
+        start: number;
+        end: number;
+    };
+    originalCode: string;
+    suggestedCode: string;
+    reason: string;
+}
+/**
+ * Test suggestion for code without tests
+ */
+export interface TestSuggestion {
+    forFile: string;
+    testFramework: 'jest' | 'mocha' | 'vitest' | 'pytest' | 'unittest' | 'other';
+    testCode: string;
+    description: string;
+    testFilePath?: string;
+}
+/**
+ * DevOps cost estimate for infrastructure changes
+ */
+export interface DevOpsCostEstimate {
+    resource: string;
+    resourceType: string;
+    currentMonthlyCost?: number;
+    estimatedNewCost: number;
+    difference?: number;
+    confidence: 'high' | 'medium' | 'low';
+    details?: string;
+}
+/**
+ * Test coverage report
+ */
+export interface CoverageReport {
+    available: boolean;
+    overallPercentage?: number;
+    lineCoverage?: number;
+    branchCoverage?: number;
+    fileBreakdown?: Array<{
+        file: string;
+        lineCoverage: number;
+        branchCoverage?: number;
+    }>;
+    delta?: number;
+    coverageTool?: string;
+}
 export interface FileAnalysis {
     path: string;
     summary: string;
@@ -61,6 +112,7 @@ export interface FileAnalysis {
         deletions: number;
     };
     recommendations: string[];
+    suggestedChanges?: CodeSuggestion[];
 }
 export interface Fix {
     file: string;
@@ -81,6 +133,8 @@ export interface AgentResult {
     totalTokensUsed: number;
     executionTime: number;
     mode: AnalysisMode;
+    overallComplexity?: number;
+    overallRisks?: string[];
     archDocsImpact?: {
         used: boolean;
         docsAvailable: number;
@@ -95,6 +149,9 @@ export interface AgentResult {
         warningCount: number;
         criticalIssues: string[];
     };
+    testSuggestions?: TestSuggestion[];
+    devOpsCostEstimates?: DevOpsCostEstimate[];
+    coverageReport?: CoverageReport;
 }
 export type AgentAnalysisResult = AgentResult;
 export interface AgentMetadata {

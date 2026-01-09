@@ -5,7 +5,6 @@
 import { MemorySaver } from '@langchain/langgraph';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { AgentContext, AgentResult, FileAnalysis, AgentExecutionOptions } from '../types/agent.types.js';
-import { SemgrepResult, SemgrepSummary } from '../types/semgrep.types.js';
 /**
  * Agent workflow state
  */
@@ -14,17 +13,8 @@ export declare const PRAgentState: import("@langchain/langgraph").AnnotationRoot
     iteration: import("@langchain/langgraph").BinaryOperatorAggregate<number, number>;
     fileAnalyses: import("@langchain/langgraph").BinaryOperatorAggregate<Map<string, FileAnalysis>, Map<string, FileAnalysis>>;
     currentSummary: import("@langchain/langgraph").BinaryOperatorAggregate<string, string>;
-    fixes: import("@langchain/langgraph").BinaryOperatorAggregate<{
-        file: string;
-        line?: number;
-        comment: string;
-        severity?: "critical" | "warning" | "suggestion";
-    }[], {
-        file: string;
-        line?: number;
-        comment: string;
-        severity?: "critical" | "warning" | "suggestion";
-    }[]>;
+    currentRisks: import("@langchain/langgraph").BinaryOperatorAggregate<any[], any[]>;
+    currentComplexity: import("@langchain/langgraph").BinaryOperatorAggregate<number, number>;
     clarityScore: import("@langchain/langgraph").BinaryOperatorAggregate<number, number>;
     missingInformation: import("@langchain/langgraph").BinaryOperatorAggregate<string[], string[]>;
     recommendations: import("@langchain/langgraph").BinaryOperatorAggregate<string[], string[]>;
@@ -34,13 +24,13 @@ export declare const PRAgentState: import("@langchain/langgraph").AnnotationRoot
     archDocsKeyInsights: import("@langchain/langgraph").BinaryOperatorAggregate<string[], string[]>;
     totalInputTokens: import("@langchain/langgraph").BinaryOperatorAggregate<number, number>;
     totalOutputTokens: import("@langchain/langgraph").BinaryOperatorAggregate<number, number>;
-    semgrepResult: import("@langchain/langgraph").BinaryOperatorAggregate<SemgrepResult | null, SemgrepResult | null>;
-    semgrepSummary: import("@langchain/langgraph").BinaryOperatorAggregate<SemgrepSummary | null, SemgrepSummary | null>;
 }>;
 /**
  * Configuration for PR agent workflow
  */
 export interface PRAgentWorkflowConfig {
+    maxIterations: number;
+    clarityThreshold: number;
     skipSelfRefinement?: boolean;
 }
 /**
@@ -64,9 +54,16 @@ export declare abstract class BasePRAgentWorkflow {
      * Fast path execution - skip refinement loop but still use LLM for detailed analysis
      */
     private executeFastPath;
+    /**
+     * Smart change detection - analyzes files and returns only relevant enhanced features
+     */
+    private detectAndAnalyzeChangeTypes;
     private analyzeFilesNode;
-    private runStaticAnalysisNode;
-    private generateFixesNode;
+    private detectRisksNode;
+    private calculateComplexityNode;
     private generateSummaryNode;
+    private evaluateQualityNode;
+    private refineAnalysisNode;
     private finalizeNode;
+    private shouldRefine;
 }

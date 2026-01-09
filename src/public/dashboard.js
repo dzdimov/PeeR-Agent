@@ -40,17 +40,48 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
+function formatCurrency(amount) {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(amount);
+}
+
+function formatTokens(tokens) {
+    if (tokens >= 1000000) {
+        return (tokens / 1000000).toFixed(1) + 'M';
+    } else if (tokens >= 1000) {
+        return (tokens / 1000).toFixed(1) + 'K';
+    }
+    return tokens.toString();
+}
+
 function renderStats(stats) {
     document.getElementById('stats-total-prs').textContent = stats.totalPRs;
     document.getElementById('stats-success-rate').textContent = `${stats.successRate.toFixed(1)}%`;
     document.getElementById('stats-avg-complexity').textContent = stats.avgComplexity.toFixed(1);
     
-    // New Metrics Rendering
+    // Dashboard improvements (PR #13) - Unit tests created & terraform cost
     if (stats.metrics) {
         document.getElementById('stats-tests-created').textContent = stats.metrics.testsCreated;
-        document.getElementById('stats-coverage').textContent = stats.metrics.avgCoverage ? `${stats.metrics.avgCoverage.toFixed(1)}%` : 'N/A';
-        const cost = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(stats.metrics.terraformCost);
+        const cost = formatCurrency(stats.metrics.terraformCost);
         document.getElementById('stats-terraform-cost').textContent = cost;
+    }
+
+    // DevOps/Infrastructure Cost Stats Rendering (v0.2.0)
+    if (stats.devOpsCosts) {
+        document.getElementById('stats-devops-cost').textContent = formatCurrency(stats.devOpsCosts.totalMonthlyEstimate || 0) + '/mo';
+        document.getElementById('stats-devops-count').textContent = stats.devOpsCosts.analysesWithDevOps || 0;
+        document.getElementById('stats-test-suggestions').textContent = stats.devOpsCosts.testSuggestionStats?.totalSuggestions || 0;
+        
+        // Use average coverage from both metrics and devOpsCosts (prefer devOpsCosts as it's more specific)
+        const avgCoverage = stats.devOpsCosts.coverageStats?.averageCoverage || stats.metrics?.avgCoverage || 0;
+        document.getElementById('stats-avg-coverage').textContent = avgCoverage > 0 ? `${avgCoverage.toFixed(1)}%` : 'N/A';
+    } else {
+        document.getElementById('stats-devops-cost').textContent = '$0.00/mo';
+        document.getElementById('stats-devops-count').textContent = '0';
+        document.getElementById('stats-test-suggestions').textContent = '0';
+        
+        // Fallback to metrics if devOpsCosts not available
+        const avgCoverage = stats.metrics?.avgCoverage || 0;
+        document.getElementById('stats-avg-coverage').textContent = avgCoverage > 0 ? `${avgCoverage.toFixed(1)}%` : 'N/A';
     }
 
     // Render Recommendations
@@ -237,6 +268,112 @@ function renderCharts(stats) {
             }
         }
     });
+
+    // DevOps Resource Types Chart (v0.2.0)
+    if (stats.devOpsCosts && stats.devOpsCosts.resourceTypes && Object.keys(stats.devOpsCosts.resourceTypes).length > 0) {
+        const devOpsCtx = document.getElementById('chart-devops-resources').getContext('2d');
+        const resourceLabels = Object.keys(stats.devOpsCosts.resourceTypes);
+        const resourceData = Object.values(stats.devOpsCosts.resourceTypes);
+        
+        new Chart(devOpsCtx, {
+            type: 'doughnut',
+            data: {
+                labels: resourceLabels.map(r => r.toUpperCase()),
+                datasets: [{
+                    data: resourceData,
+                    backgroundColor: [
+                        'rgb(16, 185, 129)', // Green (EC2)
+                        'rgb(245, 158, 11)', // Amber (Lambda)
+                        'rgb(59, 130, 246)', // Blue (S3)
+                        'rgb(139, 92, 246)', // Purple (RDS)
+                        'rgb(236, 72, 153)', // Pink (ECS)
+                        'rgb(244, 63, 94)',  // Rose (Others)
+                    ],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                cutout: '60%',
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.label}: ${context.parsed} PRs`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    } else {
+        // Show placeholder when no DevOps data
+        const devOpsContainer = document.getElementById('chart-devops-resources');
+        if (devOpsContainer) {
+            devOpsContainer.parentElement.innerHTML = '<p class="text-gray-500 text-center py-8">No DevOps/IaC changes detected yet.</p>';
+        }
+    }
+
+    // DevOps Cost Trend Chart (v0.2.0)
+    if (stats.devOpsCosts && stats.devOpsCosts.costTrend && stats.devOpsCosts.costTrend.length > 0) {
+        const costTrendCtx = document.getElementById('chart-cost-trend').getContext('2d');
+        const trendLabels = stats.devOpsCosts.costTrend.map(t => t.date);
+        const trendData = stats.devOpsCosts.costTrend.map(t => t.cost);
+        
+        new Chart(costTrendCtx, {
+            type: 'line',
+            data: {
+                labels: trendLabels,
+                datasets: [{
+                    label: 'Daily DevOps Cost',
+                    data: trendData,
+                    borderColor: 'rgb(16, 185, 129)',
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    tension: 0.3,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Cost ($)' },
+                        ticks: {
+                            callback: function(value) {
+                                return '$' + value.toFixed(2);
+                            }
+                        }
+                    },
+                    x: {
+                        title: { display: true, text: 'Date' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return 'Cost: $' + context.parsed.y.toFixed(2);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    } else {
+        // Show placeholder when no cost trend data
+        const costTrendContainer = document.getElementById('chart-cost-trend');
+        if (costTrendContainer) {
+            costTrendContainer.parentElement.innerHTML = '<p class="text-gray-500 dark:text-gray-400 text-center py-8">No cost trend data available yet.</p>';
+        }
+    }
 }
 
 function renderTable(recent) {
@@ -248,6 +385,18 @@ function renderTable(recent) {
         
         // Format Date
         const date = new Date(row.timestamp).toLocaleDateString();
+        
+        // Format DevOps Cost (v0.2.0)
+        const cost = row.devops_cost_monthly ? formatCurrency(row.devops_cost_monthly) + '/mo' : '-';
+        let costTitle = '';
+        if (row.devops_resources) {
+            try {
+                const resources = JSON.parse(row.devops_resources);
+                costTitle = resources.map(r => r.resourceType).join(', ');
+            } catch (e) {
+                costTitle = 'AWS infrastructure cost estimate';
+            }
+        }
 
         // Construct PR URL (assuming GitHub for now)
         const prUrl = `https://github.com/${row.repo_owner}/${row.repo_name}/pull/${row.pr_number}`;
@@ -265,8 +414,9 @@ function renderTable(recent) {
                     ${row.complexity}/5
                 </span>
             </td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${row.risks_count}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${date}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${row.risks_count}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400" title="${costTitle}">${cost}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${date}</td>
         `;
         tbody.appendChild(tr);
     });
