@@ -329,7 +329,15 @@ function renderTable(recent) {
         
         // Format DevOps Cost (v0.2.0)
         const cost = row.devops_cost_monthly ? formatCurrency(row.devops_cost_monthly) + '/mo' : '-';
-        const costTitle = row.devops_resources ? JSON.parse(row.devops_resources).map(r => r.resourceType).join(', ') : '';
+        let costTitle = '';
+        if (row.devops_resources) {
+            try {
+                const resources = JSON.parse(row.devops_resources);
+                costTitle = resources.map(r => r.resourceType).join(', ');
+            } catch (e) {
+                costTitle = 'AWS infrastructure cost estimate';
+            }
+        }
 
         // Construct PR URL (assuming GitHub for now)
         const prUrl = `https://github.com/${row.repo_owner}/${row.repo_name}/pull/${row.pr_number}`;
