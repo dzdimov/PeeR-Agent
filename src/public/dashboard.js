@@ -1,4 +1,27 @@
 document.addEventListener('DOMContentLoaded', async () => {
+    // Theme Toggle Logic
+    const themeToggleBtn = document.getElementById('theme-toggle');
+
+    function applyTheme(isDark) {
+        if (isDark) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    }
+
+    // Check preference
+    const isDark = localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    applyTheme(isDark);
+
+    themeToggleBtn.addEventListener('click', () => {
+        const isCurrentlyDark = document.documentElement.classList.contains('dark');
+        localStorage.theme = isCurrentlyDark ? 'light' : 'dark';
+        applyTheme(!isCurrentlyDark);
+        // Reload to update charts colors if necessary
+        location.reload(); 
+    });
+
     try {
         const response = await fetch('/dashboard/api/stats');
         const data = await response.json();
@@ -22,9 +45,13 @@ function renderStats(stats) {
     document.getElementById('stats-success-rate').textContent = `${stats.successRate.toFixed(1)}%`;
     document.getElementById('stats-avg-complexity').textContent = stats.avgComplexity.toFixed(1);
     
-    // ROI Rendering
-    const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(stats.roi.moneySaved);
-    document.getElementById('stats-roi').textContent = `${stats.roi.hoursSaved.toFixed(0)}h (${money})`;
+    // New Metrics Rendering
+    if (stats.metrics) {
+        document.getElementById('stats-tests-created').textContent = stats.metrics.testsCreated;
+        document.getElementById('stats-coverage').textContent = stats.metrics.avgCoverage ? `${stats.metrics.avgCoverage.toFixed(1)}%` : 'N/A';
+        const cost = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(stats.metrics.terraformCost);
+        document.getElementById('stats-terraform-cost').textContent = cost;
+    }
 
     // Render Recommendations
     const recList = document.getElementById('recommendations-list');
@@ -35,15 +62,15 @@ function renderStats(stats) {
             const div = document.createElement('div');
             div.className = 'flex items-start';
             div.innerHTML = `
-                <span class="flex-shrink-0 h-6 w-6 flex items-center justify-center rounded-full bg-blue-100 text-blue-600 font-bold text-xs mr-3">
+                <span class="flex-shrink-0 h-6 w-6 flex items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 font-bold text-xs mr-3">
                     ${item.count}
                 </span>
-                <p class="text-sm text-gray-700">${item.text}</p>
+                <p class="text-sm text-gray-700 dark:text-gray-300">${item.text}</p>
             `;
             recList.appendChild(div);
         });
     } else {
-        recList.innerHTML = '<p class="text-gray-500 italic">No recurring recommendations yet.</p>';
+        recList.innerHTML = '<p class="text-gray-500 dark:text-gray-400 italic">No recurring recommendations yet.</p>';
     }
 }
 
@@ -101,6 +128,53 @@ function renderCharts(stats) {
                     grid: {
                         drawOnChartArea: false,
                     },
+                }
+            }
+        }
+    });
+
+    // JIRA Compliance Chart
+    // Default to 0s if not present (placeholder)
+    const jiraData = stats.jiraCompliance || { satisfied: 0, missed: 0 };
+    const jiraCtx = document.getElementById('chart-jira').getContext('2d');
+    
+    new Chart(jiraCtx, {
+        type: 'bar',
+        data: {
+            labels: ['Satisfied Review', 'Missed Requirements'],
+            datasets: [{
+                label: 'PR Count',
+                data: [jiraData.satisfied, jiraData.missed],
+                backgroundColor: [
+                    'rgba(34, 197, 94, 0.6)', // Green
+                    'rgba(239, 68, 68, 0.6)'  // Red
+                ],
+                borderColor: [
+                    'rgb(34, 197, 94)',
+                    'rgb(239, 68, 68)'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            indexAxis: 'y', 
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    ticks: { stepSize: 1 },
+                    title: { display: true, text: 'Number of PRs' }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: ${context.raw}`;
+                        }
+                    }
                 }
             }
         }
@@ -175,11 +249,18 @@ function renderTable(recent) {
         // Format Date
         const date = new Date(row.timestamp).toLocaleDateString();
 
+        // Construct PR URL (assuming GitHub for now)
+        const prUrl = `https://github.com/${row.repo_owner}/${row.repo_name}/pull/${row.pr_number}`;
+
         tr.innerHTML = `
-            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">#${row.pr_number}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${row.repo_owner}/${row.repo_name}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${row.author}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                <a href="${prUrl}" target="_blank" class="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 hover:underline">
+                    #${row.pr_number}
+                </a>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${row.repo_owner}/${row.repo_name}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">${row.author}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                 <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getComplexityColor(row.complexity)}">
                     ${row.complexity}/5
                 </span>

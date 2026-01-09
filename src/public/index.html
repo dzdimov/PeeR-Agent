@@ -5,23 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PeeR-Agent Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class'
+        }
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
     </style>
 </head>
-<body class="bg-gray-50 min-h-screen">
-    <nav class="bg-white shadow-sm border-b border-gray-200">
+<body class="bg-gray-50 dark:bg-gray-900 min-h-screen transition-colors duration-200">
+    <nav class="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between h-16">
                 <div class="flex items-center">
                     <i class="fa-solid fa-robot text-blue-600 text-2xl mr-3"></i>
-                    <h1 class="text-xl font-bold text-gray-900">PeeR-Agent Dashboard</h1>
+                    <h1 class="text-xl font-bold text-gray-900 dark:text-white">PeeR-Agent Dashboard</h1>
                 </div>
-                <div class="flex items-center">
-                    <span class="text-sm text-gray-500 mr-2">Status:</span>
-                    <span class="px-2 py-1 text-xs font-semibold text-green-800 bg-green-100 rounded-full">Active</span>
+                <div class="flex items-center space-x-4">
+                    <button id="theme-toggle" class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-700">
+                        <i class="fa-solid fa-moon dark:hidden"></i>
+                        <i class="fa-solid fa-sun hidden dark:block"></i>
+                    </button>
+                    <div class="flex items-center">
+                        <span class="text-sm text-gray-500 dark:text-gray-400 mr-2">Status:</span>
+                        <span class="px-2 py-1 text-xs font-semibold text-green-800 bg-green-100 dark:bg-green-900 dark:text-green-200 rounded-full">Active</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -29,9 +40,9 @@
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <!-- Stats Overview -->
-        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 mb-8">
             <!-- Total PRs -->
-            <div class="bg-white overflow-hidden shadow rounded-lg">
+            <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
                 <div class="p-5">
                     <div class="flex items-center">
                         <div class="flex-shrink-0 bg-blue-500 rounded-md p-3">
@@ -39,8 +50,8 @@
                         </div>
                         <div class="ml-5 w-0 flex-1">
                             <dl>
-                                <dt class="text-sm font-medium text-gray-500 truncate">Total PRs</dt>
-                                <dd class="text-lg font-medium text-gray-900" id="stats-total-prs">-</dd>
+                                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Total PRs</dt>
+                                <dd class="text-lg font-medium text-gray-900 dark:text-white" id="stats-total-prs">-</dd>
                             </dl>
                         </div>
                     </div>
@@ -48,7 +59,7 @@
             </div>
 
             <!-- Success Rate -->
-            <div class="bg-white overflow-hidden shadow rounded-lg">
+            <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
                 <div class="p-5">
                     <div class="flex items-center">
                         <div class="flex-shrink-0 bg-green-500 rounded-md p-3">
@@ -56,8 +67,8 @@
                         </div>
                         <div class="ml-5 w-0 flex-1">
                             <dl>
-                                <dt class="text-sm font-medium text-gray-500 truncate">Success Rate</dt>
-                                <dd class="text-lg font-medium text-gray-900" id="stats-success-rate">-</dd>
+                                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Success Rate</dt>
+                                <dd class="text-lg font-medium text-gray-900 dark:text-white" id="stats-success-rate">-</dd>
                             </dl>
                         </div>
                     </div>
@@ -65,7 +76,7 @@
             </div>
 
             <!-- Avg Complexity -->
-            <div class="bg-white overflow-hidden shadow rounded-lg">
+            <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
                 <div class="p-5">
                     <div class="flex items-center">
                         <div class="flex-shrink-0 bg-yellow-500 rounded-md p-3">
@@ -73,25 +84,60 @@
                         </div>
                         <div class="ml-5 w-0 flex-1">
                             <dl>
-                                <dt class="text-sm font-medium text-gray-500 truncate">Avg Complexity</dt>
-                                <dd class="text-lg font-medium text-gray-900" id="stats-avg-complexity">-</dd>
+                                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Avg Complexity</dt>
+                                <dd class="text-lg font-medium text-gray-900 dark:text-white" id="stats-avg-complexity">-</dd>
                             </dl>
                         </div>
                     </div>
                 </div>
             </div>
-            
-            <!-- Analyzed Today -->
-            <div class="bg-white overflow-hidden shadow rounded-lg">
+
+            <!-- New Widgets -->
+            <!-- Unit Tests Created -->
+            <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
                 <div class="p-5">
                     <div class="flex items-center">
-                        <div class="flex-shrink-0 bg-purple-500 rounded-md p-3">
-                            <i class="fa-solid fa-clock text-white"></i>
+                        <div class="flex-shrink-0 bg-indigo-500 rounded-md p-3">
+                            <i class="fa-solid fa-vial text-white"></i>
                         </div>
                         <div class="ml-5 w-0 flex-1">
                             <dl>
-                                <dt class="text-sm font-medium text-gray-500 truncate">Est. Saved</dt>
-                                <dd class="text-lg font-medium text-gray-900" id="stats-roi">-</dd>
+                                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Tests Created</dt>
+                                <dd class="text-lg font-medium text-gray-900 dark:text-white" id="stats-tests-created">0</dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Coverage -->
+            <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
+                <div class="p-5">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0 bg-pink-500 rounded-md p-3">
+                            <i class="fa-solid fa-shield-halved text-white"></i>
+                        </div>
+                        <div class="ml-5 w-0 flex-1">
+                            <dl>
+                                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Mean Coverage</dt>
+                                <dd class="text-lg font-medium text-gray-900 dark:text-white" id="stats-coverage">0%</dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Terraform Cost -->
+            <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
+                <div class="p-5">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0 bg-green-600 rounded-md p-3">
+                            <i class="fa-solid fa-dollar-sign text-white"></i>
+                        </div>
+                        <div class="ml-5 w-0 flex-1">
+                            <dl>
+                                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Infra Cost</dt>
+                                <dd class="text-lg font-medium text-gray-900 dark:text-white" id="stats-terraform-cost">$0</dd>
                             </dl>
                         </div>
                     </div>
@@ -99,9 +145,17 @@
             </div>
         </div>
         
+        <!-- JIRA Compliance Chart -->
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mb-8">
+            <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">JIRA Requirements Compliance</h3>
+            <div class="h-64">
+                <canvas id="chart-jira"></canvas>
+            </div>
+        </div>
+
         <!-- Quality Trend Chart -->
-        <div class="bg-white shadow rounded-lg p-6 mb-8">
-            <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">Code Quality Trend (Daily Avg Complexity)</h3>
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mb-8">
+            <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">Code Quality Trend (Daily Avg Complexity)</h3>
             <div class="h-64">
                 <canvas id="chart-trend"></canvas>
             </div>
@@ -109,55 +163,56 @@
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
             <!-- PRs per Creator Chart -->
-            <div class="bg-white shadow rounded-lg p-6">
-                <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">PR Activity by Creator</h3>
+            <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+                <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">PR Activity by Creator</h3>
                 <canvas id="chart-creators"></canvas>
             </div>
 
             <!-- Complexity vs Risks Chart -->
-             <div class="bg-white shadow rounded-lg p-6">
-                <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">Complexity Distribution</h3>
+             <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+                <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">Complexity Distribution</h3>
                  <canvas id="chart-complexity"></canvas>
             </div>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
              <!-- Common Recommendations -->
-             <div class="bg-white shadow rounded-lg p-6">
-                <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">Most Requested Changes</h3>
+             <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+                <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">Most Requested Changes</h3>
                 <div id="recommendations-list" class="space-y-3">
                     <!-- List injected by js -->
                 </div>
             </div>
              
-             <!-- Risks Breakdown (Placeholder for now) -->
-             <div class="bg-white shadow rounded-lg p-6 flex flex-col justify-center items-center text-center">
-                 <div class="p-4 bg-blue-50 rounded-full mb-3">
-                     <i class="fa-solid fa-wand-magic-sparkles text-blue-500 text-xl"></i>
+             <!-- AI Insights (Placeholder for now) -->
+             <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 flex flex-col justify-center items-center text-center">
+                 <div class="p-4 bg-blue-50 dark:bg-blue-900 rounded-full mb-3">
+                     <i class="fa-solid fa-wand-magic-sparkles text-blue-500 dark:text-blue-300 text-xl"></i>
                  </div>
-                 <h3 class="text-lg font-medium text-gray-900">AI Insights</h3>
-                 <p class="text-gray-500 mt-2">More advanced risk categorization coming soon.</p>
+                 <h3 class="text-lg font-medium text-gray-900 dark:text-white">AI Insights</h3>
+                 <p class="text-gray-500 dark:text-gray-400 mt-2">More advanced risk categorization coming soon.</p>
              </div>
         </div>
 
         <!-- Recent Activity Table -->
-        <div class="bg-white shadow rounded-lg overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-200">
-                <h3 class="text-lg leading-6 font-medium text-gray-900">Recent Analysis</h3>
+        <!-- Recent PRs Table -->
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white">Recent Analysis</h3>
             </div>
             <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead class="bg-gray-50 dark:bg-gray-700">
                         <tr>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PR</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Repo</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Author</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Complexity</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Risks</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">PR</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Repo</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Author</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Complexity</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Risks</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Date</th>
                         </tr>
                     </thead>
-                    <tbody class="bg-white divide-y divide-gray-200" id="table-recent-body">
+                    <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700" id="table-recent-body">
                         <!-- Rows will be injected here -->
                     </tbody>
                 </table>

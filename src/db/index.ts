@@ -33,6 +33,10 @@ export interface AnalysisRecord {
   risks_count: number;
   risks: string; // JSON
   recommendations: string; // JSON
+  // New fields
+  created_tests_count?: number;
+  coverage_percentage?: number;
+  estimated_cost?: number;
   timestamp: string;
 }
 
@@ -63,34 +67,56 @@ function initDB() {
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // Migrate: Add new columns if they don't exist
+  try {
+    const columns = db.prepare('PRAGMA table_info(pr_analysis)').all() as any[];
+    const columnNames = columns.map(c => c.name);
+
+    if (!columnNames.includes('created_tests_count')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN created_tests_count INTEGER DEFAULT 0');
+    }
+    if (!columnNames.includes('coverage_percentage')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN coverage_percentage REAL DEFAULT NULL');
+    }
+    if (!columnNames.includes('estimated_cost')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN estimated_cost REAL DEFAULT 0');
+    }
+  } catch (error) {
+    console.error('Migration error:', error);
+  }
 }
 
 export function saveAnalysis(record: Omit<AnalysisRecord, 'id' | 'timestamp'> & { timestamp?: string }) {
   const db = getDB();
   
-  if (record.timestamp) {
-      const stmt = db.prepare(`
-        INSERT INTO pr_analysis (
-          pr_number, repo_owner, repo_name, author, title, 
-          complexity, risks_count, risks, recommendations, timestamp
-        ) VALUES (
-          @pr_number, @repo_owner, @repo_name, @author, @title, 
-          @complexity, @risks_count, @risks, @recommendations, @timestamp
-        )
-      `);
-      stmt.run(record);
-  } else {
-      const stmt = db.prepare(`
-        INSERT INTO pr_analysis (
-          pr_number, repo_owner, repo_name, author, title, 
-          complexity, risks_count, risks, recommendations
-        ) VALUES (
-          @pr_number, @repo_owner, @repo_name, @author, @title, 
-          @complexity, @risks_count, @risks, @recommendations
-        )
-      `);
-      stmt.run(record);
-  }
+  // Prepare values including defaults for new fields
+  const safeRecord = {
+    ...record,
+    created_tests_count: record.created_tests_count || 0,
+    coverage_percentage: record.coverage_percentage || null,
+    estimated_cost: record.estimated_cost || 0
+  };
+  
+  const columns = [
+    'pr_number', 'repo_owner', 'repo_name', 'author', 'title', 
+    'complexity', 'risks_count', 'risks', 'recommendations',
+    'created_tests_count', 'coverage_percentage', 'estimated_cost'
+  ];
+  
+  if (record.timestamp) columns.push('timestamp');
+  
+  const placeholders = columns.map(c => `@${c}`).join(', ');
+  const columnList = columns.join(', ');
+
+  const stmt = db.prepare(`
+    INSERT INTO pr_analysis (
+      ${columnList}
+    ) VALUES (
+      ${placeholders}
+    )
+  `);
+  stmt.run(safeRecord);
 }
 
 
@@ -188,12 +214,10 @@ export function getDashboardStats() {
   const complexityDistribution = getComplexityDistribution();
   const qualityTrend = getWeeklyQualityTrend();
 
-  // ROI Calculation assumptions: 
-  // 1. Avg PR takes 30 mins to review manually.
-  // 2. AI saves 15 mins (0.25 hours) per PR by catching trivial issues/risks early.
-  // 3. Dev cost $60/hr. -> $15 saved per PR.
-  const hoursSaved = totalPRs.count * 0.25;
-  const moneySaved = hoursSaved * 60;
+  // New Aggregations
+  const totalTestsCreated = db.prepare('SELECT SUM(created_tests_count) as count FROM pr_analysis').get() as { count: number };
+  const avgCoverage = db.prepare('SELECT AVG(coverage_percentage) as avg FROM pr_analysis WHERE coverage_percentage IS NOT NULL').get() as { avg: number };
+  const terraformCost = db.prepare('SELECT SUM(estimated_cost) as cost FROM pr_analysis').get() as { cost: number };
 
   return {
     totalPRs: totalPRs.count,
@@ -203,9 +227,16 @@ export function getDashboardStats() {
     commonRecommendations,
     complexityDistribution,
     qualityTrend,
-    roi: {
-        hoursSaved,
-        moneySaved
+    // Added metrics
+    metrics: {
+        testsCreated: totalTestsCreated.count || 0,
+        avgCoverage: avgCoverage.avg || 0,
+        terraformCost: terraformCost.cost || 0
+    },
+    // Placeholder for future JIRA integration
+    jiraCompliance: {
+        satisfied: 0,
+        missed: 0
     }
   };
 }
