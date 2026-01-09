@@ -413,6 +413,8 @@ Returns formatted analysis for the calling LLM to display and enhance with AI in
           risks_count: result.fixes?.filter((f: Fix) => f.severity === 'critical' || f.severity === 'warning').length || 0,
           risks: JSON.stringify(result.fixes?.filter((f: Fix) => f.severity === 'critical' || f.severity === 'warning').map((f: Fix) => f.comment) || []),
           recommendations: JSON.stringify(result.recommendations || []),
+          // Peer review not run in MCP server (handled by calling LLM)
+          peer_review_enabled: 0,
         });
       } catch {
         // Ignore save errors

@@ -43,6 +43,19 @@ export interface AnalysisRecord {
   has_test_suggestions?: number; // 1 if test suggestions were generated
   test_suggestions_count?: number;
   coverage_percentage?: number;
+  // Peer Review / Jira Integration (v0.3.0)
+  peer_review_enabled?: number; // 1 if peer review was run
+  ticket_key?: string; // Primary Jira ticket key (e.g., PROJ-123)
+  ticket_quality_score?: number; // Overall ticket quality score (0-100)
+  ticket_quality_tier?: string; // excellent/good/adequate/poor/insufficient
+  ac_compliance_percentage?: number; // Acceptance criteria compliance (0-100)
+  ac_requirements_met?: number; // Number of requirements met
+  ac_requirements_total?: number; // Total number of requirements
+  peer_review_verdict?: string; // approve/request_changes/needs_discussion
+  peer_review_blockers?: string; // JSON array of blockers
+  peer_review_warnings?: string; // JSON array of warnings
+  implementation_completeness?: number; // 0-100
+  quality_score?: number; // 0-100
 }
 
 let db: Database.Database;
@@ -76,7 +89,19 @@ function initDB() {
       devops_resources TEXT,
       has_test_suggestions INTEGER,
       test_suggestions_count INTEGER,
-      coverage_percentage REAL
+      coverage_percentage REAL,
+      peer_review_enabled INTEGER,
+      ticket_key TEXT,
+      ticket_quality_score REAL,
+      ticket_quality_tier TEXT,
+      ac_compliance_percentage REAL,
+      ac_requirements_met INTEGER,
+      ac_requirements_total INTEGER,
+      peer_review_verdict TEXT,
+      peer_review_blockers TEXT,
+      peer_review_warnings TEXT,
+      implementation_completeness REAL,
+      quality_score REAL
     )
   `);
   
@@ -109,6 +134,44 @@ function initDB() {
     if (!columnNames.includes('coverage_percentage')) {
       db.exec('ALTER TABLE pr_analysis ADD COLUMN coverage_percentage REAL');
     }
+
+    // Peer Review / Jira Integration (v0.3.0)
+    if (!columnNames.includes('peer_review_enabled')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN peer_review_enabled INTEGER');
+    }
+    if (!columnNames.includes('ticket_key')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN ticket_key TEXT');
+    }
+    if (!columnNames.includes('ticket_quality_score')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN ticket_quality_score REAL');
+    }
+    if (!columnNames.includes('ticket_quality_tier')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN ticket_quality_tier TEXT');
+    }
+    if (!columnNames.includes('ac_compliance_percentage')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN ac_compliance_percentage REAL');
+    }
+    if (!columnNames.includes('ac_requirements_met')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN ac_requirements_met INTEGER');
+    }
+    if (!columnNames.includes('ac_requirements_total')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN ac_requirements_total INTEGER');
+    }
+    if (!columnNames.includes('peer_review_verdict')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN peer_review_verdict TEXT');
+    }
+    if (!columnNames.includes('peer_review_blockers')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN peer_review_blockers TEXT');
+    }
+    if (!columnNames.includes('peer_review_warnings')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN peer_review_warnings TEXT');
+    }
+    if (!columnNames.includes('implementation_completeness')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN implementation_completeness REAL');
+    }
+    if (!columnNames.includes('quality_score')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN quality_score REAL');
+    }
   } catch (e) {
     // Ignore migration errors - columns may already exist
   }
@@ -116,42 +179,71 @@ function initDB() {
 
 export function saveAnalysis(record: Omit<AnalysisRecord, 'id' | 'timestamp'> & { timestamp?: string }) {
   const db = getDB();
-  
+
   // Prepare values with defaults for all optional fields
   const safeRecord = {
     ...record,
     created_tests_count: record.created_tests_count || 0,
     estimated_cost: record.estimated_cost || 0,
     coverage_percentage: record.coverage_percentage || null,
+    // Peer review fields (v0.3.0)
+    peer_review_enabled: record.peer_review_enabled || null,
+    ticket_key: record.ticket_key || null,
+    ticket_quality_score: record.ticket_quality_score || null,
+    ticket_quality_tier: record.ticket_quality_tier || null,
+    ac_compliance_percentage: record.ac_compliance_percentage || null,
+    ac_requirements_met: record.ac_requirements_met || null,
+    ac_requirements_total: record.ac_requirements_total || null,
+    peer_review_verdict: record.peer_review_verdict || null,
+    peer_review_blockers: record.peer_review_blockers || null,
+    peer_review_warnings: record.peer_review_warnings || null,
+    implementation_completeness: record.implementation_completeness || null,
+    quality_score: record.quality_score || null,
   };
-  
+
   if (record.timestamp) {
       const stmt = db.prepare(`
         INSERT INTO pr_analysis (
-          pr_number, repo_owner, repo_name, author, title, 
+          pr_number, repo_owner, repo_name, author, title,
           complexity, risks_count, risks, recommendations, timestamp,
           created_tests_count, estimated_cost,
-          devops_cost_monthly, devops_resources, has_test_suggestions, test_suggestions_count, coverage_percentage
+          devops_cost_monthly, devops_resources, has_test_suggestions, test_suggestions_count, coverage_percentage,
+          peer_review_enabled, ticket_key, ticket_quality_score, ticket_quality_tier,
+          ac_compliance_percentage, ac_requirements_met, ac_requirements_total,
+          peer_review_verdict, peer_review_blockers, peer_review_warnings,
+          implementation_completeness, quality_score
         ) VALUES (
-          @pr_number, @repo_owner, @repo_name, @author, @title, 
+          @pr_number, @repo_owner, @repo_name, @author, @title,
           @complexity, @risks_count, @risks, @recommendations, @timestamp,
           @created_tests_count, @estimated_cost,
-          @devops_cost_monthly, @devops_resources, @has_test_suggestions, @test_suggestions_count, @coverage_percentage
+          @devops_cost_monthly, @devops_resources, @has_test_suggestions, @test_suggestions_count, @coverage_percentage,
+          @peer_review_enabled, @ticket_key, @ticket_quality_score, @ticket_quality_tier,
+          @ac_compliance_percentage, @ac_requirements_met, @ac_requirements_total,
+          @peer_review_verdict, @peer_review_blockers, @peer_review_warnings,
+          @implementation_completeness, @quality_score
         )
       `);
       stmt.run(safeRecord);
   } else {
       const stmt = db.prepare(`
         INSERT INTO pr_analysis (
-          pr_number, repo_owner, repo_name, author, title, 
+          pr_number, repo_owner, repo_name, author, title,
           complexity, risks_count, risks, recommendations,
           created_tests_count, estimated_cost,
-          devops_cost_monthly, devops_resources, has_test_suggestions, test_suggestions_count, coverage_percentage
+          devops_cost_monthly, devops_resources, has_test_suggestions, test_suggestions_count, coverage_percentage,
+          peer_review_enabled, ticket_key, ticket_quality_score, ticket_quality_tier,
+          ac_compliance_percentage, ac_requirements_met, ac_requirements_total,
+          peer_review_verdict, peer_review_blockers, peer_review_warnings,
+          implementation_completeness, quality_score
         ) VALUES (
-          @pr_number, @repo_owner, @repo_name, @author, @title, 
+          @pr_number, @repo_owner, @repo_name, @author, @title,
           @complexity, @risks_count, @risks, @recommendations,
           @created_tests_count, @estimated_cost,
-          @devops_cost_monthly, @devops_resources, @has_test_suggestions, @test_suggestions_count, @coverage_percentage
+          @devops_cost_monthly, @devops_resources, @has_test_suggestions, @test_suggestions_count, @coverage_percentage,
+          @peer_review_enabled, @ticket_key, @ticket_quality_score, @ticket_quality_tier,
+          @ac_compliance_percentage, @ac_requirements_met, @ac_requirements_total,
+          @peer_review_verdict, @peer_review_blockers, @peer_review_warnings,
+          @implementation_completeness, @quality_score
         )
       `);
       stmt.run(safeRecord);
@@ -258,6 +350,9 @@ export function getDashboardStats() {
   const avgCoverage = db.prepare('SELECT AVG(coverage_percentage) as avg FROM pr_analysis WHERE coverage_percentage IS NOT NULL').get() as { avg: number };
   const terraformCost = db.prepare('SELECT SUM(estimated_cost) as cost FROM pr_analysis').get() as { cost: number };
 
+  // Jira Compliance Stats (v0.3.0)
+  const jiraComplianceStats = getJiraComplianceStats();
+
   return {
     totalPRs: totalPRs.count,
     successRate: totalPRs.count > 0 ? (successfulPRs.count / totalPRs.count) * 100 : 0,
@@ -274,6 +369,8 @@ export function getDashboardStats() {
     },
     // DevOps/Infrastructure cost data (v0.2.0)
     devOpsCosts: getDevOpsCostStats(),
+    // Jira Compliance (v0.3.0)
+    jiraCompliance: jiraComplianceStats,
   };
 }
 
@@ -378,6 +475,95 @@ export function getDevOpsCostStats(): DevOpsCostStats {
     coverageStats: {
       analysesWithCoverage: coverageStats.analyses_with_coverage,
       averageCoverage: coverageStats.avg_coverage,
+    },
+  };
+}
+
+// ========== Jira Compliance Stats (v0.3.0) ==========
+
+export interface JiraComplianceStats {
+  satisfied: number; // PRs with AC compliance >= 70%
+  missed: number; // PRs with AC compliance < 70%
+  totalWithPeerReview: number;
+  averageTicketQuality: number;
+  averageACCompliance: number;
+  verdictBreakdown: {
+    approved: number;
+    requestChanges: number;
+    needsDiscussion: number;
+  };
+  ticketQualityTiers: {
+    excellent: number;
+    good: number;
+    adequate: number;
+    poor: number;
+    insufficient: number;
+  };
+}
+
+/**
+ * Get Jira compliance statistics for the dashboard
+ */
+export function getJiraComplianceStats(): JiraComplianceStats {
+  const db = getDB();
+
+  // Count PRs with peer review enabled
+  const peerReviewCounts = db.prepare(`
+    SELECT
+      COUNT(CASE WHEN peer_review_enabled = 1 THEN 1 END) as total_with_peer_review,
+      COUNT(CASE WHEN peer_review_enabled = 1 AND ac_compliance_percentage >= 70 THEN 1 END) as satisfied,
+      COUNT(CASE WHEN peer_review_enabled = 1 AND ac_compliance_percentage < 70 THEN 1 END) as missed
+    FROM pr_analysis
+  `).get() as { total_with_peer_review: number; satisfied: number; missed: number };
+
+  // Average scores
+  const avgScores = db.prepare(`
+    SELECT
+      COALESCE(AVG(ticket_quality_score), 0) as avg_ticket_quality,
+      COALESCE(AVG(ac_compliance_percentage), 0) as avg_ac_compliance
+    FROM pr_analysis
+    WHERE peer_review_enabled = 1
+  `).get() as { avg_ticket_quality: number; avg_ac_compliance: number };
+
+  // Verdict breakdown
+  const verdictCounts = db.prepare(`
+    SELECT
+      COUNT(CASE WHEN peer_review_verdict = 'approve' THEN 1 END) as approved,
+      COUNT(CASE WHEN peer_review_verdict = 'request_changes' THEN 1 END) as request_changes,
+      COUNT(CASE WHEN peer_review_verdict = 'needs_discussion' THEN 1 END) as needs_discussion
+    FROM pr_analysis
+    WHERE peer_review_enabled = 1
+  `).get() as { approved: number; request_changes: number; needs_discussion: number };
+
+  // Ticket quality tier breakdown
+  const tierCounts = db.prepare(`
+    SELECT
+      COUNT(CASE WHEN ticket_quality_tier = 'excellent' THEN 1 END) as excellent,
+      COUNT(CASE WHEN ticket_quality_tier = 'good' THEN 1 END) as good,
+      COUNT(CASE WHEN ticket_quality_tier = 'adequate' THEN 1 END) as adequate,
+      COUNT(CASE WHEN ticket_quality_tier = 'poor' THEN 1 END) as poor,
+      COUNT(CASE WHEN ticket_quality_tier = 'insufficient' THEN 1 END) as insufficient
+    FROM pr_analysis
+    WHERE peer_review_enabled = 1
+  `).get() as { excellent: number; good: number; adequate: number; poor: number; insufficient: number };
+
+  return {
+    satisfied: peerReviewCounts.satisfied,
+    missed: peerReviewCounts.missed,
+    totalWithPeerReview: peerReviewCounts.total_with_peer_review,
+    averageTicketQuality: avgScores.avg_ticket_quality,
+    averageACCompliance: avgScores.avg_ac_compliance,
+    verdictBreakdown: {
+      approved: verdictCounts.approved,
+      requestChanges: verdictCounts.request_changes,
+      needsDiscussion: verdictCounts.needs_discussion,
+    },
+    ticketQualityTiers: {
+      excellent: tierCounts.excellent,
+      good: tierCounts.good,
+      adequate: tierCounts.adequate,
+      poor: tierCounts.poor,
+      insufficient: tierCounts.insufficient,
     },
   };
 }
