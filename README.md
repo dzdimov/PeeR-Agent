@@ -22,6 +22,7 @@ PR Agent analyzes your code changes and provides:
 🔬 **Static Analysis Integration** - Semgrep-powered security and code quality scanning
 🔌 **Multiple AI Providers** - Anthropic Claude, OpenAI GPT, Google Gemini, Zhipu AI
 🖥️ **CLI & GitHub Action** - Use locally or in CI/CD pipelines
+🔗 **MCP Server** - LLM-agnostic integration with Claude Code, Cursor, Cline, and more
 📊 **File-Level Analysis** - Individual risk and complexity scores per file
 🎫 **Peer Review Integration** - Validates against Jira tickets and acceptance criteria
 🌐 **Language-Aware** - Supports TypeScript, JavaScript, Python, Java, Go, Rust, and more
@@ -55,11 +56,13 @@ pr-agent help                       # Show help
 - [Installation](#installation)
   - [CLI Installation](#cli-installation)
   - [GitHub Action Setup](#github-action-setup)
+  - [MCP Server Installation](#mcp-server-installation)
 - [CLI Usage](#cli-usage)
   - [Quick Start](#quick-start)
   - [Analyze Command](#analyze-command)
   - [Configuration](#configuration)
 - [UI Dashboard](#ui-dashboard)
+- [MCP Server](#mcp-server)
 - [Architecture Documentation Integration](#architecture-documentation-integration)
 - [Static Analysis Integration](#static-analysis-integration)
 - [Peer Review Integration](#peer-review-integration)
@@ -105,6 +108,19 @@ npx @techdebtgpt/pr-agent analyze
 pr-agent --version
 pr-agent help
 ```
+
+### MCP Server Installation
+
+The MCP server provides LLM-agnostic PR analysis for tools like Claude Code, Cursor, Cline, and Windsurf. **No API keys required** - it uses the calling tool's LLM.
+
+```bash
+# Install globally
+npm install -g pr-agent
+
+# The MCP server is available as pr-agent-mcp
+```
+
+See [MCP Server](#mcp-server) section for configuration details.
 
 ## CLI Usage
 
@@ -376,6 +392,94 @@ npm start
 Access the dashboard at `http://YOUR_SERVER_IP:3000/`.
 
 **Note on Persistence**: The dashboard relies on `pr-agent.db`. If you are deploying to an ephemeral environment (like Heroku or Serverless), you will lose your history on restart unless you persist this file.
+
+## MCP Server
+
+The MCP (Model Context Protocol) Server **mirrors the CLI workflow exactly**, providing LLM-agnostic PR analysis for any MCP-compatible tool. It uses the same configuration file (`.pragent.config.json`) and supports all CLI features.
+
+### Supported Tools
+
+- **Claude Code** - Anthropic's official CLI
+- **Cursor** - AI-first code editor
+- **Cline** - VS Code extension
+- **Windsurf** - AI code editor
+- **GitHub Copilot** (with MCP support)
+
+### Configuration
+
+Add to your tool's MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "pr-agent": {
+      "command": "pr-agent-mcp"
+    }
+  }
+}
+```
+
+From source:
+```json
+{
+  "mcpServers": {
+    "pr-agent": {
+      "command": "node",
+      "args": ["dist/mcp/server.js"]
+    }
+  }
+}
+```
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `analyze` | Main entry point - mirrors `pr-agent analyze` exactly |
+| `dashboard` | Start web dashboard - mirrors `pr-agent dashboard` |
+
+### Usage Examples
+
+Simply ask your AI assistant:
+
+```
+Analyze my current branch changes
+```
+
+```
+Start the PR Agent dashboard
+```
+
+### How It Works
+
+The MCP server does everything the CLI does **except** calling AI providers:
+
+1. **Parses git diff** (same as CLI)
+2. **Detects risks** using pattern matching (same patterns as CLI)
+3. **Calculates complexity** algorithmically (same algorithm as CLI)
+4. **Loads arch-docs** if available (same as CLI)
+5. **Extracts Jira tickets** from PR title/branch (same as CLI)
+6. **Saves to database** for dashboard (same as CLI)
+7. **Returns CLI-formatted output** for the calling LLM to enhance
+
+The calling tool's LLM then adds AI-powered insights to the analysis.
+
+### CLI Parity
+
+| Feature | CLI | MCP Server |
+|---------|-----|------------|
+| Config file | `.pragent.config.json` | `.pragent.config.json` |
+| Diff parsing | Yes | Yes |
+| Risk detection | Yes | Yes |
+| Complexity scoring | Yes | Yes |
+| Arch-docs support | Yes | Yes |
+| Jira integration | Yes | Yes |
+| Dashboard | Yes | Yes |
+| AI analysis | Requires API key | Uses calling LLM |
+
+### Documentation
+
+For complete documentation, see [docs/MCP-SERVER.md](docs/MCP-SERVER.md).
 
 ## Architecture Documentation Integration
 

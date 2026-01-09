@@ -552,11 +552,92 @@ export async function analyzePR(options: AnalyzeOptions = {}): Promise<void> {
     }
     if (peerReviewEnabled) {
       // Pass the same provider config to peer review so it uses the same LLM
-      await runPeerReview(config, diff, title, result, options.verbose || false, {
+      const peerReviewResult = await runPeerReview(config, diff, title, result, options.verbose || false, {
         provider,
         apiKey,
         model,
       });
+
+      // Save peer review results to database for dashboard
+      if (peerReviewResult && peerReviewResult.enabled && peerReviewResult.analysis) {
+        try {
+          const repoInfo = getRepoInfo();
+          const author = getGitAuthor();
+          let branchName: string | undefined;
+          try {
+            branchName = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
+          } catch {
+            // ignore
+          }
+          const prNumber = extractPRNumber(branchName, title);
+
+          // Calculate overall complexity from file analyses
+          let overallComplexity = 1;
+          if (result.fileAnalyses && result.fileAnalyses.size > 0) {
+            const complexities = Array.from(result.fileAnalyses.values()).map((f: any) => f.complexity || 1);
+            overallComplexity = Math.round(complexities.reduce((a: number, b: number) => a + b, 0) / complexities.length);
+          }
+
+          // Calculate DevOps cost if estimates available
+          const devOpsCostMonthly = result.devOpsCostEstimates?.reduce(
+            (sum: number, e: any) => sum + (e.estimatedNewCost || 0), 0
+          ) || 0;
+          const devOpsResources = result.devOpsCostEstimates
+            ? JSON.stringify(result.devOpsCostEstimates)
+            : undefined;
+
+          // Extract peer review data
+          const analysis = peerReviewResult.analysis;
+          const primaryTicket = peerReviewResult.primaryTicket;
+
+          // Determine verdict from peerReview analysis
+          let verdict = 'needs_discussion';
+          if (analysis.peerReview.readyForReview && analysis.peerReview.blockers.length === 0) {
+            verdict = 'approve';
+          } else if (analysis.peerReview.blockers.length > 0) {
+            verdict = 'request_changes';
+          }
+
+          saveAnalysis({
+            pr_number: prNumber,
+            repo_owner: repoInfo.owner,
+            repo_name: repoInfo.name,
+            author: author,
+            title: title || 'Untitled Analysis',
+            complexity: overallComplexity,
+            risks_count: result.fixes?.filter((f: Fix) => f.severity === 'critical' || f.severity === 'warning').length || 0,
+            risks: JSON.stringify(result.fixes?.filter((f: Fix) => f.severity === 'critical' || f.severity === 'warning').map((f: Fix) => f.comment) || []),
+            recommendations: JSON.stringify(result.recommendations || []),
+            // DevOps/Infrastructure cost tracking (v0.2.0)
+            devops_cost_monthly: devOpsCostMonthly > 0 ? devOpsCostMonthly : undefined,
+            devops_resources: devOpsResources,
+            has_test_suggestions: (result.testSuggestions?.length ?? 0) > 0 ? 1 : 0,
+            test_suggestions_count: result.testSuggestions?.length ?? 0,
+            coverage_percentage: result.coverageReport?.overallPercentage,
+            // Peer Review data (v0.3.0)
+            peer_review_enabled: 1,
+            ticket_key: primaryTicket?.key,
+            ticket_quality_score: analysis.ticketQuality.overallScore,
+            ticket_quality_tier: analysis.ticketQuality.tier,
+            ac_compliance_percentage: analysis.acValidation?.compliancePercentage,
+            ac_requirements_met: analysis.acValidation?.criteriaAnalysis?.filter(c => c.status === 'met').length,
+            ac_requirements_total: analysis.acValidation?.criteriaAnalysis?.length,
+            peer_review_verdict: verdict,
+            peer_review_blockers: JSON.stringify(analysis.peerReview.blockers),
+            peer_review_warnings: JSON.stringify(analysis.peerReview.warnings),
+            implementation_completeness: analysis.peerReview.implementationCompleteness,
+            quality_score: analysis.peerReview.qualityScore,
+          });
+
+          if (options.verbose) {
+            console.log(chalk.gray(`   Peer review results saved to database (PR #${prNumber}, ticket: ${primaryTicket?.key || 'N/A'})`));
+          }
+        } catch (saveError: any) {
+          if (options.verbose) {
+            console.log(chalk.yellow(`   Warning: Could not save peer review to database: ${saveError.message}`));
+          }
+        }
+      }
     }
   } catch (error: any) {
     spinner.fail('Analysis failed');
@@ -896,7 +977,7 @@ async function runPeerReview(
   prAnalysisResult: any,
   verbose: boolean,
   providerOptions: { provider: SupportedProvider; apiKey: string; model?: string }
-): Promise<void> {
+): Promise<PeerReviewResult | null> {
   const spinner = ora('Running Peer Review analysis...').start();
 
   try {
@@ -920,7 +1001,7 @@ async function runPeerReview(
       if (verbose) {
         console.log(chalk.gray(`   Debug: peerReviewConfig=${JSON.stringify(peerReviewConfig)}`));
       }
-      return;
+      return null;
     }
 
     // Get branch name for ticket extraction
@@ -972,11 +1053,14 @@ async function runPeerReview(
         console.log(chalk.gray(`  - ${ref.key} (from ${ref.source}, confidence: ${ref.confidence}%)`));
       });
     }
+
+    return result;
   } catch (error: any) {
     spinner.fail('Peer Review analysis failed');
     console.error(chalk.yellow(`⚠️  ${error.message || 'Unknown error'}`));
     console.log(chalk.gray('   The main PR analysis completed successfully.'));
     console.log(chalk.gray('   Peer Review is an optional enhancement - check Jira configuration.'));
+    return null;
   }
 }
 

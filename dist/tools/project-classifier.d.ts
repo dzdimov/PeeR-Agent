@@ -42,8 +42,24 @@ export declare function createProjectClassifierTool(): DynamicStructuredTool<z.Z
     changedFiles: z.ZodArray<z.ZodObject<{
         filename: z.ZodString;
         patch: z.ZodOptional<z.ZodString>;
-    }, z.core.$strip>>;
-}, z.core.$strip>, {
+    }, "strip", z.ZodTypeAny, {
+        filename: string;
+        patch?: string | undefined;
+    }, {
+        filename: string;
+        patch?: string | undefined;
+    }>, "many">;
+}, "strip", z.ZodTypeAny, {
+    changedFiles: {
+        filename: string;
+        patch?: string | undefined;
+    }[];
+}, {
+    changedFiles: {
+        filename: string;
+        patch?: string | undefined;
+    }[];
+}>, {
     changedFiles: {
         filename: string;
         patch?: string | undefined;
