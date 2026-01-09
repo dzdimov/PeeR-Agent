@@ -12,13 +12,21 @@ import { buildArchDocsContext } from '../utils/arch-docs-rag.js';
  */
 export class PRAnalyzerAgent extends BasePRAgentWorkflow {
     constructor(options = {}) {
-        const model = ProviderFactory.createChatModel({
-            provider: options.provider || 'anthropic',
-            apiKey: options.apiKey,
-            model: options.model,
-            temperature: options.temperature ?? 0.2,
-            maxTokens: options.maxTokens ?? 4000,
-        });
+        let model;
+        // If a pre-configured BaseChatModel is passed (MCP case), use it directly
+        if (options.chatModel) {
+            model = options.chatModel;
+        }
+        else {
+            // Otherwise create model via ProviderFactory (CLI/Action case - backward compatible)
+            model = ProviderFactory.createChatModel({
+                provider: options.provider || 'anthropic',
+                apiKey: options.apiKey,
+                model: options.model,
+                temperature: options.temperature ?? 0.2,
+                maxTokens: options.maxTokens ?? 4000,
+            });
+        }
         super(model);
     }
     /**

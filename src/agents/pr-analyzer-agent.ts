@@ -3,6 +3,7 @@
  * LangChain-based agent for intelligent PR analysis
  */
 
+import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { BasePRAgentWorkflow } from './base-pr-agent-workflow.js';
 import { AgentContext, AgentResult, AgentMetadata, AnalysisMode } from '../types/agent.types.js';
 import { parseDiff } from '../tools/pr-analysis-tools.js';
@@ -11,18 +12,35 @@ import { parseAllArchDocs, archDocsExists } from '../utils/arch-docs-parser.js';
 import { buildArchDocsContext } from '../utils/arch-docs-rag.js';
 
 /**
+ * Extended options that allow passing a pre-configured model
+ * Used by MCP server to pass its underlying LLM model
+ */
+export interface PRAnalyzerOptions extends ProviderOptions {
+  /** Pre-configured LangChain model (for MCP server pass-through) */
+  chatModel?: BaseChatModel;
+}
+
+/**
  * PR Analysis Agent using LangChain and LangGraph
  */
 export class PRAnalyzerAgent extends BasePRAgentWorkflow {
-  constructor(options: ProviderOptions = {}) {
-    const model = ProviderFactory.createChatModel({
-      provider: options.provider || 'anthropic',
-      apiKey: options.apiKey,
-      model: options.model,
-      temperature: options.temperature ?? 0.2,
-      maxTokens: options.maxTokens ?? 4000,
-    });
-    
+  constructor(options: PRAnalyzerOptions = {}) {
+    let model: BaseChatModel;
+
+    // If a pre-configured BaseChatModel is passed (MCP case), use it directly
+    if (options.chatModel) {
+      model = options.chatModel;
+    } else {
+      // Otherwise create model via ProviderFactory (CLI/Action case - backward compatible)
+      model = ProviderFactory.createChatModel({
+        provider: options.provider || 'anthropic',
+        apiKey: options.apiKey,
+        model: options.model,
+        temperature: options.temperature ?? 0.2,
+        maxTokens: options.maxTokens ?? 4000,
+      });
+    }
+
     super(model);
   }
 
@@ -182,7 +200,7 @@ export class PRAnalyzerAgent extends BasePRAgentWorkflow {
 /**
  * Factory function to create PR analyzer agent
  */
-export function createPRAnalyzerAgent(options: ProviderOptions = {}): PRAnalyzerAgent {
+export function createPRAnalyzerAgent(options: PRAnalyzerOptions = {}): PRAnalyzerAgent {
   return new PRAnalyzerAgent(options);
 }
 
