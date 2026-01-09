@@ -33,11 +33,16 @@ export interface AnalysisRecord {
   risks_count: number;
   risks: string; // JSON
   recommendations: string; // JSON
-  // New fields
-  created_tests_count?: number;
-  coverage_percentage?: number;
-  estimated_cost?: number;
   timestamp: string;
+  // Dashboard improvements (PR #13)
+  created_tests_count?: number;
+  estimated_cost?: number; // Legacy field from PR #13
+  // Smart change detection & DevOps analysis (v0.2.0)
+  devops_cost_monthly?: number; // Estimated monthly AWS infrastructure cost
+  devops_resources?: string; // JSON array of detected resources
+  has_test_suggestions?: number; // 1 if test suggestions were generated
+  test_suggestions_count?: number;
+  coverage_percentage?: number;
 }
 
 let db: Database.Database;
@@ -64,59 +69,93 @@ function initDB() {
       risks_count INTEGER,
       risks TEXT,
       recommendations TEXT,
-      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_tests_count INTEGER,
+      estimated_cost REAL,
+      devops_cost_monthly REAL,
+      devops_resources TEXT,
+      has_test_suggestions INTEGER,
+      test_suggestions_count INTEGER,
+      coverage_percentage REAL
     )
   `);
-
-  // Migrate: Add new columns if they don't exist
+  
+  // Migration: Add columns to existing tables if they don't exist
   try {
-    const columns = db.prepare('PRAGMA table_info(pr_analysis)').all() as any[];
-    const columnNames = columns.map(c => c.name);
-
+    const tableInfo = db.prepare('PRAGMA table_info(pr_analysis)').all() as { name: string }[];
+    const columnNames = tableInfo.map(col => col.name);
+    
+    // Dashboard improvements (PR #13)
     if (!columnNames.includes('created_tests_count')) {
       db.exec('ALTER TABLE pr_analysis ADD COLUMN created_tests_count INTEGER DEFAULT 0');
-    }
-    if (!columnNames.includes('coverage_percentage')) {
-      db.exec('ALTER TABLE pr_analysis ADD COLUMN coverage_percentage REAL DEFAULT NULL');
     }
     if (!columnNames.includes('estimated_cost')) {
       db.exec('ALTER TABLE pr_analysis ADD COLUMN estimated_cost REAL DEFAULT 0');
     }
-  } catch (error) {
-    console.error('Migration error:', error);
+    
+    // DevOps/Infrastructure cost tracking (v0.2.0)
+    if (!columnNames.includes('devops_cost_monthly')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN devops_cost_monthly REAL');
+    }
+    if (!columnNames.includes('devops_resources')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN devops_resources TEXT');
+    }
+    if (!columnNames.includes('has_test_suggestions')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN has_test_suggestions INTEGER');
+    }
+    if (!columnNames.includes('test_suggestions_count')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN test_suggestions_count INTEGER');
+    }
+    if (!columnNames.includes('coverage_percentage')) {
+      db.exec('ALTER TABLE pr_analysis ADD COLUMN coverage_percentage REAL');
+    }
+  } catch (e) {
+    // Ignore migration errors - columns may already exist
   }
 }
 
 export function saveAnalysis(record: Omit<AnalysisRecord, 'id' | 'timestamp'> & { timestamp?: string }) {
   const db = getDB();
   
-  // Prepare values including defaults for new fields
+  // Prepare values with defaults for all optional fields
   const safeRecord = {
     ...record,
     created_tests_count: record.created_tests_count || 0,
+    estimated_cost: record.estimated_cost || 0,
     coverage_percentage: record.coverage_percentage || null,
-    estimated_cost: record.estimated_cost || 0
   };
   
-  const columns = [
-    'pr_number', 'repo_owner', 'repo_name', 'author', 'title', 
-    'complexity', 'risks_count', 'risks', 'recommendations',
-    'created_tests_count', 'coverage_percentage', 'estimated_cost'
-  ];
-  
-  if (record.timestamp) columns.push('timestamp');
-  
-  const placeholders = columns.map(c => `@${c}`).join(', ');
-  const columnList = columns.join(', ');
-
-  const stmt = db.prepare(`
-    INSERT INTO pr_analysis (
-      ${columnList}
-    ) VALUES (
-      ${placeholders}
-    )
-  `);
-  stmt.run(safeRecord);
+  if (record.timestamp) {
+      const stmt = db.prepare(`
+        INSERT INTO pr_analysis (
+          pr_number, repo_owner, repo_name, author, title, 
+          complexity, risks_count, risks, recommendations, timestamp,
+          created_tests_count, estimated_cost,
+          devops_cost_monthly, devops_resources, has_test_suggestions, test_suggestions_count, coverage_percentage
+        ) VALUES (
+          @pr_number, @repo_owner, @repo_name, @author, @title, 
+          @complexity, @risks_count, @risks, @recommendations, @timestamp,
+          @created_tests_count, @estimated_cost,
+          @devops_cost_monthly, @devops_resources, @has_test_suggestions, @test_suggestions_count, @coverage_percentage
+        )
+      `);
+      stmt.run(safeRecord);
+  } else {
+      const stmt = db.prepare(`
+        INSERT INTO pr_analysis (
+          pr_number, repo_owner, repo_name, author, title, 
+          complexity, risks_count, risks, recommendations,
+          created_tests_count, estimated_cost,
+          devops_cost_monthly, devops_resources, has_test_suggestions, test_suggestions_count, coverage_percentage
+        ) VALUES (
+          @pr_number, @repo_owner, @repo_name, @author, @title, 
+          @complexity, @risks_count, @risks, @recommendations,
+          @created_tests_count, @estimated_cost,
+          @devops_cost_monthly, @devops_resources, @has_test_suggestions, @test_suggestions_count, @coverage_percentage
+        )
+      `);
+      stmt.run(safeRecord);
+  }
 }
 
 
@@ -227,21 +266,118 @@ export function getDashboardStats() {
     commonRecommendations,
     complexityDistribution,
     qualityTrend,
-    // Added metrics
+    // Dashboard improvements (PR #13)
     metrics: {
         testsCreated: totalTestsCreated.count || 0,
         avgCoverage: avgCoverage.avg || 0,
         terraformCost: terraformCost.cost || 0
     },
-    // Placeholder for future JIRA integration
-    jiraCompliance: {
-        satisfied: 0,
-        missed: 0
-    }
+    // DevOps/Infrastructure cost data (v0.2.0)
+    devOpsCosts: getDevOpsCostStats(),
   };
 }
 
 export function getRecentAnalyses(limit = 10) {
   const db = getDB();
   return db.prepare('SELECT * FROM pr_analysis ORDER BY timestamp DESC LIMIT ?').all(limit);
+}
+
+// ========== DevOps Cost Tracking Functions (v0.2.0) ==========
+
+export interface DevOpsCostStats {
+  totalMonthlyEstimate: number;
+  analysesWithDevOps: number;
+  averageDevOpsCost: number;
+  resourceTypes: Record<string, number>; // Count by resource type
+  costTrend: Array<{ date: string; cost: number }>;
+  testSuggestionStats: {
+    analysesWithSuggestions: number;
+    totalSuggestions: number;
+  };
+  coverageStats: {
+    analysesWithCoverage: number;
+    averageCoverage: number;
+  };
+}
+
+/**
+ * Get DevOps/Infrastructure cost statistics
+ */
+export function getDevOpsCostStats(): DevOpsCostStats {
+  const db = getDB();
+  
+  // Total DevOps cost estimates
+  const devOpsTotals = db.prepare(`
+    SELECT 
+      COALESCE(SUM(devops_cost_monthly), 0) as total_monthly,
+      COUNT(CASE WHEN devops_cost_monthly > 0 THEN 1 END) as analyses_with_devops
+    FROM pr_analysis
+    WHERE devops_cost_monthly IS NOT NULL
+  `).get() as { total_monthly: number; analyses_with_devops: number };
+  
+  // Resource type breakdown (from JSON column)
+  const resourceRows = db.prepare(`
+    SELECT devops_resources
+    FROM pr_analysis
+    WHERE devops_resources IS NOT NULL AND devops_resources != ''
+  `).all() as { devops_resources: string }[];
+  
+  const resourceTypes: Record<string, number> = {};
+  for (const row of resourceRows) {
+    try {
+      const resources = JSON.parse(row.devops_resources) as Array<{ resourceType: string }>;
+      for (const resource of resources) {
+        resourceTypes[resource.resourceType] = (resourceTypes[resource.resourceType] || 0) + 1;
+      }
+    } catch (e) {
+      // Ignore parse errors
+    }
+  }
+  
+  // Cost trend (last 30 days)
+  const costTrend = db.prepare(`
+    SELECT 
+      substr(timestamp, 1, 10) as date,
+      COALESCE(SUM(devops_cost_monthly), 0) as cost
+    FROM pr_analysis
+    WHERE devops_cost_monthly IS NOT NULL
+      AND timestamp >= datetime('now', '-30 days')
+    GROUP BY date
+    ORDER BY date ASC
+  `).all() as { date: string; cost: number }[];
+  
+  // Test suggestion stats
+  const testStats = db.prepare(`
+    SELECT 
+      COUNT(CASE WHEN has_test_suggestions = 1 THEN 1 END) as analyses_with_suggestions,
+      COALESCE(SUM(test_suggestions_count), 0) as total_suggestions
+    FROM pr_analysis
+  `).get() as { analyses_with_suggestions: number; total_suggestions: number };
+  
+  // Coverage stats
+  const coverageStats = db.prepare(`
+    SELECT 
+      COUNT(CASE WHEN coverage_percentage IS NOT NULL THEN 1 END) as analyses_with_coverage,
+      COALESCE(AVG(coverage_percentage), 0) as avg_coverage
+    FROM pr_analysis
+    WHERE coverage_percentage IS NOT NULL
+  `).get() as { analyses_with_coverage: number; avg_coverage: number };
+  
+  return {
+    totalMonthlyEstimate: devOpsTotals.total_monthly,
+    analysesWithDevOps: devOpsTotals.analyses_with_devops,
+    averageDevOpsCost: devOpsTotals.analyses_with_devops > 0 
+      ? devOpsTotals.total_monthly / devOpsTotals.analyses_with_devops 
+      : 0,
+    resourceTypes,
+    costTrend,
+    testSuggestionStats: {
+      analysesWithSuggestions: testStats.analyses_with_suggestions,
+      totalSuggestions: testStats.total_suggestions,
+    },
+    coverageStats: {
+      analysesWithCoverage: coverageStats.analyses_with_coverage,
+      averageCoverage: coverageStats.avg_coverage,
+    },
+  };
 }

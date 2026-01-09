@@ -92,8 +92,7 @@
                 </div>
             </div>
 
-            <!-- New Widgets -->
-            <!-- Unit Tests Created -->
+            <!-- Unit Tests Created (PR #13) -->
             <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
                 <div class="p-5">
                     <div class="flex items-center">
@@ -110,24 +109,7 @@
                 </div>
             </div>
 
-            <!-- Coverage -->
-            <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
-                <div class="p-5">
-                    <div class="flex items-center">
-                        <div class="flex-shrink-0 bg-pink-500 rounded-md p-3">
-                            <i class="fa-solid fa-shield-halved text-white"></i>
-                        </div>
-                        <div class="ml-5 w-0 flex-1">
-                            <dl>
-                                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Mean Coverage</dt>
-                                <dd class="text-lg font-medium text-gray-900 dark:text-white" id="stats-coverage">0%</dd>
-                            </dl>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Terraform Cost -->
+            <!-- Terraform Cost (PR #13) -->
             <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
                 <div class="p-5">
                     <div class="flex items-center">
@@ -145,7 +127,7 @@
             </div>
         </div>
         
-        <!-- JIRA Compliance Chart -->
+        <!-- JIRA Compliance Chart (PR #13) -->
         <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mb-8">
             <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">JIRA Requirements Compliance</h3>
             <div class="h-64">
@@ -184,14 +166,90 @@
                 </div>
             </div>
              
-             <!-- AI Insights (Placeholder for now) -->
-             <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 flex flex-col justify-center items-center text-center">
-                 <div class="p-4 bg-blue-50 dark:bg-blue-900 rounded-full mb-3">
-                     <i class="fa-solid fa-wand-magic-sparkles text-blue-500 dark:text-blue-300 text-xl"></i>
-                 </div>
-                 <h3 class="text-lg font-medium text-gray-900 dark:text-white">AI Insights</h3>
-                 <p class="text-gray-500 dark:text-gray-400 mt-2">More advanced risk categorization coming soon.</p>
+             <!-- DevOps Resource Types (v0.2.0) -->
+             <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+                <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">Detected DevOps Resources</h3>
+                <canvas id="chart-devops-resources"></canvas>
              </div>
+        </div>
+
+        <!-- DevOps/Infrastructure Cost Section (v0.2.0) -->
+        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+            <!-- Total DevOps Cost -->
+            <div class="bg-gradient-to-br from-emerald-500 to-teal-600 overflow-hidden shadow rounded-lg">
+                <div class="p-5">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0 bg-white/20 rounded-md p-3">
+                            <i class="fa-brands fa-aws text-white"></i>
+                        </div>
+                        <div class="ml-5 w-0 flex-1">
+                            <dl>
+                                <dt class="text-sm font-medium text-white/80 truncate">DevOps Cost/mo</dt>
+                                <dd class="text-lg font-bold text-white" id="stats-devops-cost">-</dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PRs with DevOps Changes -->
+            <div class="bg-gradient-to-br from-rose-500 to-pink-600 overflow-hidden shadow rounded-lg">
+                <div class="p-5">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0 bg-white/20 rounded-md p-3">
+                            <i class="fa-solid fa-server text-white"></i>
+                        </div>
+                        <div class="ml-5 w-0 flex-1">
+                            <dl>
+                                <dt class="text-sm font-medium text-white/80 truncate">IaC Changes</dt>
+                                <dd class="text-lg font-bold text-white" id="stats-devops-count">-</dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Test Suggestions -->
+            <div class="bg-gradient-to-br from-violet-500 to-purple-600 overflow-hidden shadow rounded-lg">
+                <div class="p-5">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0 bg-white/20 rounded-md p-3">
+                            <i class="fa-solid fa-flask text-white"></i>
+                        </div>
+                        <div class="ml-5 w-0 flex-1">
+                            <dl>
+                                <dt class="text-sm font-medium text-white/80 truncate">Test Suggestions</dt>
+                                <dd class="text-lg font-bold text-white" id="stats-test-suggestions">-</dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Average Coverage -->
+            <div class="bg-gradient-to-br from-lime-500 to-green-600 overflow-hidden shadow rounded-lg">
+                <div class="p-5">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0 bg-white/20 rounded-md p-3">
+                            <i class="fa-solid fa-shield-halved text-white"></i>
+                        </div>
+                        <div class="ml-5 w-0 flex-1">
+                            <dl>
+                                <dt class="text-sm font-medium text-white/80 truncate">Avg Coverage</dt>
+                                <dd class="text-lg font-bold text-white" id="stats-avg-coverage">-</dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cost Trend Chart -->
+        <div class="bg-white shadow rounded-lg p-6 mb-8">
+            <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">Daily Cost Trend</h3>
+            <div class="h-64">
+                <canvas id="chart-cost-trend"></canvas>
+            </div>
         </div>
 
         <!-- Recent Activity Table -->
@@ -209,6 +267,7 @@
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Author</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Complexity</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Risks</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">DevOps Cost</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Date</th>
                         </tr>
                     </thead>
