@@ -7,6 +7,7 @@ import { StateGraph, Annotation, END } from '@langchain/langgraph';
 import { MemorySaver } from '@langchain/langgraph';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { AgentContext, AgentResult, FileAnalysis, AgentExecutionOptions, TestSuggestion, DevOpsCostEstimate, CoverageReport } from '../types/agent.types.js';
+import path from 'path';
 import {
   parseDiff,
   createFileAnalyzerTool,
@@ -22,6 +23,8 @@ import {
   detectTestFramework,
   generateTestTemplate,
   suggestTestFilePath,
+  analyzeTestQuality,
+  formatTestEnhancement,
 } from '../tools/test-suggestion-tool.js';
 import {
   isDevOpsFile,
@@ -497,6 +500,55 @@ export abstract class BasePRAgentWorkflow {
       if (testSuggestions.length > 0) {
         result.testSuggestions = testSuggestions;
         console.log(`✅ Generated ${testSuggestions.length} test suggestions`);
+      }
+    }
+
+    // 1b. Existing tests → Test Enhancement Suggestions
+    if (testFiles.length > 0 && codeFiles.length > 0) {
+      console.log(`🔬 Analyzing ${testFiles.length} existing test file(s) for improvements...`);
+      
+      const frameworkInfo = detectTestFramework(context.config?.repoPath as string || '.');
+      
+      for (const testFile of testFiles) {
+        // Find corresponding source file
+        const baseName = testFile.path
+          .replace(/\.(test|spec)\./i, '.')
+          .replace(/^(test|tests|__tests__)\//i, '')
+          .replace(/\/(test|tests|__tests__)\//i, '/');
+        
+        const sourceFile = codeFiles.find(f => 
+          f.path.includes(baseName.split('/').pop()?.replace(/\.[^.]+$/, '') || '')
+        );
+        
+        if (sourceFile && testFile.additions > 0) {
+          // Analyze test quality and suggest enhancements
+          const enhancement = analyzeTestQuality(
+            { path: testFile.path, diff: testFile.diff },
+            { path: sourceFile.path, diff: sourceFile.diff },
+            frameworkInfo.framework
+          );
+          
+          if (enhancement.suggestions.length > 0) {
+            // Add as test suggestion with enhancement flag
+            result.testSuggestions = result.testSuggestions || [];
+            result.testSuggestions.push({
+              forFile: sourceFile.path,
+              testFramework: frameworkInfo.framework,
+              testCode: enhancement.enhancementCode || '',
+              description: `Test enhancements for ${path.basename(testFile.path)}: ${enhancement.suggestions.join(', ')}`,
+              testFilePath: testFile.path,
+              isEnhancement: true,
+              existingTestFile: testFile.path,
+            });
+            
+            console.log(`   → Found ${enhancement.missingScenarios.length} missing scenario(s) in ${path.basename(testFile.path)}`);
+          }
+        }
+      }
+      
+      const enhancementCount = result.testSuggestions?.filter(s => s.isEnhancement).length || 0;
+      if (enhancementCount > 0) {
+        console.log(`✅ Generated ${enhancementCount} test enhancement suggestion(s)`);
       }
     }
 

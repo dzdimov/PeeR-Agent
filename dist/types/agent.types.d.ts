@@ -73,6 +73,8 @@ export interface TestSuggestion {
     testCode: string;
     description: string;
     testFilePath?: string;
+    isEnhancement?: boolean;
+    existingTestFile?: string;
 }
 /**
  * DevOps cost estimate for infrastructure changes

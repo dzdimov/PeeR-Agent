@@ -674,25 +674,51 @@ function displayAgentResults(result, mode, verbose) {
     }
     // Show test suggestions if available
     if (result.testSuggestions && result.testSuggestions.length > 0) {
-        console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
-        console.log(chalk.yellow.bold(`\n🧪 Test Suggestions (${result.testSuggestions.length} files need tests)\n`));
-        for (const suggestion of result.testSuggestions) {
-            console.log(chalk.cyan(`  📝 ${suggestion.forFile}`));
-            console.log(chalk.gray(`     Framework: ${suggestion.testFramework}`));
-            if (suggestion.testFilePath) {
-                console.log(chalk.gray(`     Suggested test file: ${suggestion.testFilePath}`));
-            }
-            console.log(chalk.white(`     ${suggestion.description}\n`));
-            if (suggestion.testCode) {
-                console.log(chalk.gray('     ┌─────────────────────────────────────────'));
-                const codeLines = suggestion.testCode.split('\n').slice(0, 10);
-                codeLines.forEach((line) => {
-                    console.log(chalk.gray('     │ ') + chalk.white(line));
-                });
-                if (suggestion.testCode.split('\n').length > 10) {
-                    console.log(chalk.gray('     │ ... (copy full code below)'));
+        const newTests = result.testSuggestions.filter((s) => !s.isEnhancement);
+        const enhancements = result.testSuggestions.filter((s) => s.isEnhancement);
+        // Show new test suggestions
+        if (newTests.length > 0) {
+            console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+            console.log(chalk.yellow.bold(`\n🧪 Test Suggestions (${newTests.length} files need tests)\n`));
+            for (const suggestion of newTests) {
+                console.log(chalk.cyan(`  📝 ${suggestion.forFile}`));
+                console.log(chalk.gray(`     Framework: ${suggestion.testFramework}`));
+                if (suggestion.testFilePath) {
+                    console.log(chalk.gray(`     Suggested test file: ${suggestion.testFilePath}`));
                 }
-                console.log(chalk.gray('     └─────────────────────────────────────────\n'));
+                console.log(chalk.white(`     ${suggestion.description}\n`));
+                if (suggestion.testCode) {
+                    console.log(chalk.gray('     ┌─────────────────────────────────────────'));
+                    const codeLines = suggestion.testCode.split('\n').slice(0, 10);
+                    codeLines.forEach((line) => {
+                        console.log(chalk.gray('     │ ') + chalk.white(line));
+                    });
+                    if (suggestion.testCode.split('\n').length > 10) {
+                        console.log(chalk.gray('     │ ... (copy full code below)'));
+                    }
+                    console.log(chalk.gray('     └─────────────────────────────────────────\n'));
+                }
+            }
+        }
+        // Show test enhancement suggestions
+        if (enhancements.length > 0) {
+            console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+            console.log(chalk.green.bold(`\n🔬 Test Enhancement Suggestions (${enhancements.length} test files can be improved)\n`));
+            for (const suggestion of enhancements) {
+                console.log(chalk.cyan(`  📊 ${suggestion.existingTestFile || suggestion.testFilePath}`));
+                console.log(chalk.gray(`     Source: ${suggestion.forFile}`));
+                console.log(chalk.white(`     ${suggestion.description}\n`));
+                if (suggestion.testCode && suggestion.testCode.trim()) {
+                    console.log(chalk.gray('     ┌─────────────────────────────────────────'));
+                    const codeLines = suggestion.testCode.split('\n').slice(0, 15);
+                    codeLines.forEach((line) => {
+                        console.log(chalk.gray('     │ ') + chalk.white(line));
+                    });
+                    if (suggestion.testCode.split('\n').length > 15) {
+                        console.log(chalk.gray('     │ ... (more enhancements available)'));
+                    }
+                    console.log(chalk.gray('     └─────────────────────────────────────────\n'));
+                }
             }
         }
     }

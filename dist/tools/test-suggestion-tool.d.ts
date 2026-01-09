@@ -56,3 +56,28 @@ export declare function createTestSuggestionTool(): DynamicStructuredTool<z.ZodO
  * Generate test code template based on framework and code
  */
 export declare function generateTestTemplate(framework: string, filePath: string, codeSnippet: string, functionNames?: string[]): string;
+/**
+ * Test Enhancement Suggestion - analyzes existing tests and suggests improvements
+ */
+export interface TestEnhancement {
+    testFile: string;
+    sourceFile: string;
+    currentTests: string[];
+    missingScenarios: string[];
+    suggestions: string[];
+    enhancementCode?: string;
+}
+/**
+ * Analyze existing test file and suggest enhancements
+ */
+export declare function analyzeTestQuality(testFile: {
+    path: string;
+    diff: string;
+}, sourceFile: {
+    path: string;
+    diff: string;
+}, framework: string): TestEnhancement;
+/**
+ * Format test enhancement for display
+ */
+export declare function formatTestEnhancement(enhancement: TestEnhancement): string;
