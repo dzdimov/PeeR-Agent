@@ -37,6 +37,7 @@ program
     .option('--full', 'Show all modes (default)', true)
     .option('--arch-docs', 'Use architecture documentation from .arch-docs folder (auto-detected by default)')
     .option('--max-cost <dollars>', 'Maximum cost in dollars', '5.0')
+    .option('--show-classification', 'Show project type classification (business logic vs QA)', false)
     .option('--verbose', 'Enable verbose output', false)
     .action(analyzePR);
 // Config command

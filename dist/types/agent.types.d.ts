@@ -73,6 +73,8 @@ export interface TestSuggestion {
     testCode: string;
     description: string;
     testFilePath?: string;
+    isEnhancement?: boolean;
+    existingTestFile?: string;
 }
 /**
  * DevOps cost estimate for infrastructure changes
@@ -152,6 +154,7 @@ export interface AgentResult {
     testSuggestions?: TestSuggestion[];
     devOpsCostEstimates?: DevOpsCostEstimate[];
     coverageReport?: CoverageReport;
+    projectClassification?: string;
 }
 export type AgentAnalysisResult = AgentResult;
 export interface AgentMetadata {

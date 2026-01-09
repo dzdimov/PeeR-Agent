@@ -69,9 +69,11 @@ export class PRAnalyzerAgent extends BasePRAgentWorkflow {
     diff: string,
     title?: string,
     mode?: AnalysisMode,
-    options?: { 
-      useArchDocs?: boolean; 
+    options?: {
+      useArchDocs?: boolean;
       repoPath?: string;
+      repoOwner?: string;
+      repoName?: string;
       language?: string;
       framework?: string;
       enableStaticAnalysis?: boolean;
@@ -96,6 +98,11 @@ export class PRAnalyzerAgent extends BasePRAgentWorkflow {
       maxCost: 5.0,
       mode: mode || { summary: true, risks: true, complexity: true },
       archDocs: archDocsContext,
+      config: {
+        repoPath: options?.repoPath,
+        repoOwner: options?.repoOwner,
+        repoName: options?.repoName,
+      },
       language: options?.language,
       framework: options?.framework,
       enableStaticAnalysis: options?.enableStaticAnalysis !== false, // Default to true
@@ -113,10 +120,10 @@ export class PRAnalyzerAgent extends BasePRAgentWorkflow {
    * Quick analysis without refinement
    */
   async quickAnalyze(
-    diff: string, 
-    title?: string, 
-    options?: { 
-      useArchDocs?: boolean; 
+    diff: string,
+    title?: string,
+    options?: {
+      useArchDocs?: boolean;
       repoPath?: string;
       language?: string;
       framework?: string;
@@ -192,7 +199,7 @@ export class PRAnalyzerAgent extends BasePRAgentWorkflow {
     const baseTokens = 2000;
     const diffTokens = Math.ceil(context.diff.length / 4); // ~4 chars per token
     const filesTokens = context.files.length * 100;
-    
+
     return baseTokens + diffTokens + filesTokens;
   }
 }
@@ -209,8 +216,8 @@ export function createPRAnalyzerAgent(options: PRAnalyzerOptions = {}): PRAnalyz
  * @deprecated Use PRAnalyzerAgent constructor with ProviderOptions instead
  */
 export function createPRAnalyzerAgentLegacy(apiKey: string, modelName?: string): PRAnalyzerAgent {
-  return new PRAnalyzerAgent({ 
-    apiKey, 
+  return new PRAnalyzerAgent({
+    apiKey,
     model: modelName,
     provider: 'anthropic'
   });

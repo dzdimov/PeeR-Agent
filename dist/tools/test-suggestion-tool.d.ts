@@ -32,27 +32,76 @@ export declare function createTestSuggestionTool(): DynamicStructuredTool<z.ZodO
         path: z.ZodString;
         diff: z.ZodString;
         additions: z.ZodNumber;
-    }, z.core.$strip>>;
+    }, "strip", z.ZodTypeAny, {
+        path: string;
+        diff: string;
+        additions: number;
+    }, {
+        path: string;
+        diff: string;
+        additions: number;
+    }>, "many">;
     framework: z.ZodOptional<z.ZodString>;
     repoPath: z.ZodOptional<z.ZodString>;
-}, z.core.$strip>, {
+}, "strip", z.ZodTypeAny, {
     files: {
         path: string;
         diff: string;
         additions: number;
     }[];
-    framework?: string | undefined;
     repoPath?: string | undefined;
+    framework?: string | undefined;
 }, {
     files: {
         path: string;
         diff: string;
         additions: number;
     }[];
-    framework?: string | undefined;
     repoPath?: string | undefined;
+    framework?: string | undefined;
+}>, {
+    files: {
+        path: string;
+        diff: string;
+        additions: number;
+    }[];
+    repoPath?: string | undefined;
+    framework?: string | undefined;
+}, {
+    files: {
+        path: string;
+        diff: string;
+        additions: number;
+    }[];
+    repoPath?: string | undefined;
+    framework?: string | undefined;
 }, string>;
 /**
  * Generate test code template based on framework and code
  */
 export declare function generateTestTemplate(framework: string, filePath: string, codeSnippet: string, functionNames?: string[]): string;
+/**
+ * Test Enhancement Suggestion - analyzes existing tests and suggests improvements
+ */
+export interface TestEnhancement {
+    testFile: string;
+    sourceFile: string;
+    currentTests: string[];
+    missingScenarios: string[];
+    suggestions: string[];
+    enhancementCode?: string;
+}
+/**
+ * Analyze existing test file and suggest enhancements
+ */
+export declare function analyzeTestQuality(testFile: {
+    path: string;
+    diff: string;
+}, sourceFile: {
+    path: string;
+    diff: string;
+}, framework: string): TestEnhancement;
+/**
+ * Format test enhancement for display
+ */
+export declare function formatTestEnhancement(enhancement: TestEnhancement): string;

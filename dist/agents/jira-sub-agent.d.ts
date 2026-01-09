@@ -28,22 +28,78 @@ declare const TicketQualitySchema: z.ZodObject<{
         technicalContext: z.ZodNumber;
         visualDocumentation: z.ZodNumber;
         completeness: z.ZodNumber;
-    }, z.core.$strip>;
-    feedback: z.ZodObject<{
-        strengths: z.ZodArray<z.ZodString>;
-        weaknesses: z.ZodArray<z.ZodString>;
-        suggestions: z.ZodArray<z.ZodString>;
-    }, z.core.$strip>;
-    tier: z.ZodEnum<{
-        excellent: "excellent";
-        good: "good";
-        adequate: "adequate";
-        poor: "poor";
-        insufficient: "insufficient";
+    }, "strip", z.ZodTypeAny, {
+        descriptionClarity: number;
+        acceptanceCriteriaQuality: number;
+        testabilityScore: number;
+        scopeDefinition: number;
+        technicalContext: number;
+        visualDocumentation: number;
+        completeness: number;
+    }, {
+        descriptionClarity: number;
+        acceptanceCriteriaQuality: number;
+        testabilityScore: number;
+        scopeDefinition: number;
+        technicalContext: number;
+        visualDocumentation: number;
+        completeness: number;
     }>;
+    feedback: z.ZodObject<{
+        strengths: z.ZodArray<z.ZodString, "many">;
+        weaknesses: z.ZodArray<z.ZodString, "many">;
+        suggestions: z.ZodArray<z.ZodString, "many">;
+    }, "strip", z.ZodTypeAny, {
+        strengths: string[];
+        weaknesses: string[];
+        suggestions: string[];
+    }, {
+        strengths: string[];
+        weaknesses: string[];
+        suggestions: string[];
+    }>;
+    tier: z.ZodEnum<["excellent", "good", "adequate", "poor", "insufficient"]>;
     reviewable: z.ZodBoolean;
     reviewabilityReason: z.ZodString;
-}, z.core.$strip>;
+}, "strip", z.ZodTypeAny, {
+    overallScore: number;
+    dimensions: {
+        descriptionClarity: number;
+        acceptanceCriteriaQuality: number;
+        testabilityScore: number;
+        scopeDefinition: number;
+        technicalContext: number;
+        visualDocumentation: number;
+        completeness: number;
+    };
+    feedback: {
+        strengths: string[];
+        weaknesses: string[];
+        suggestions: string[];
+    };
+    tier: "excellent" | "good" | "adequate" | "poor" | "insufficient";
+    reviewable: boolean;
+    reviewabilityReason: string;
+}, {
+    overallScore: number;
+    dimensions: {
+        descriptionClarity: number;
+        acceptanceCriteriaQuality: number;
+        testabilityScore: number;
+        scopeDefinition: number;
+        technicalContext: number;
+        visualDocumentation: number;
+        completeness: number;
+    };
+    feedback: {
+        strengths: string[];
+        weaknesses: string[];
+        suggestions: string[];
+    };
+    tier: "excellent" | "good" | "adequate" | "poor" | "insufficient";
+    reviewable: boolean;
+    reviewabilityReason: string;
+}>;
 /**
  * Acceptance Criteria Validation - focuses on what IS and ISN'T covered
  *
@@ -60,47 +116,114 @@ declare const AcceptanceCriteriaValidationSchema: z.ZodObject<{
     derivedRequirements: z.ZodArray<z.ZodObject<{
         id: z.ZodString;
         requirement: z.ZodString;
-        source: z.ZodEnum<{
-            description: "description";
-            explicit_ac: "explicit_ac";
-            implied: "implied";
-            ticket_type: "ticket_type";
-            technical_context: "technical_context";
-        }>;
-        importance: z.ZodEnum<{
-            expected: "expected";
-            essential: "essential";
-            nice_to_have: "nice_to_have";
-        }>;
-    }, z.core.$strip>>;
+        source: z.ZodEnum<["description", "explicit_ac", "implied", "ticket_type", "technical_context"]>;
+        importance: z.ZodEnum<["essential", "expected", "nice_to_have"]>;
+    }, "strip", z.ZodTypeAny, {
+        id: string;
+        requirement: string;
+        source: "description" | "explicit_ac" | "implied" | "ticket_type" | "technical_context";
+        importance: "expected" | "essential" | "nice_to_have";
+    }, {
+        id: string;
+        requirement: string;
+        source: "description" | "explicit_ac" | "implied" | "ticket_type" | "technical_context";
+        importance: "expected" | "essential" | "nice_to_have";
+    }>, "many">;
     criteriaAnalysis: z.ZodArray<z.ZodObject<{
         criteriaId: z.ZodOptional<z.ZodString>;
         criteriaText: z.ZodString;
-        status: z.ZodEnum<{
-            met: "met";
-            unmet: "unmet";
-            partial: "partial";
-            unclear: "unclear";
-        }>;
+        status: z.ZodEnum<["met", "unmet", "partial", "unclear"]>;
         confidence: z.ZodNumber;
-        evidence: z.ZodArray<z.ZodString>;
+        evidence: z.ZodArray<z.ZodString, "many">;
         explanation: z.ZodString;
-        relatedFiles: z.ZodArray<z.ZodString>;
-    }, z.core.$strip>>;
+        relatedFiles: z.ZodArray<z.ZodString, "many">;
+    }, "strip", z.ZodTypeAny, {
+        status: "met" | "unmet" | "partial" | "unclear";
+        confidence: number;
+        criteriaText: string;
+        evidence: string[];
+        explanation: string;
+        relatedFiles: string[];
+        criteriaId?: string | undefined;
+    }, {
+        status: "met" | "unmet" | "partial" | "unclear";
+        confidence: number;
+        criteriaText: string;
+        evidence: string[];
+        explanation: string;
+        relatedFiles: string[];
+        criteriaId?: string | undefined;
+    }>, "many">;
     compliancePercentage: z.ZodNumber;
     gaps: z.ZodArray<z.ZodObject<{
         criteriaText: z.ZodString;
         gapDescription: z.ZodString;
-        severity: z.ZodEnum<{
-            critical: "critical";
-            major: "major";
-            minor: "minor";
-        }>;
+        severity: z.ZodEnum<["critical", "major", "minor"]>;
         impact: z.ZodString;
-    }, z.core.$strip>>;
-    missingBehaviors: z.ZodArray<z.ZodString>;
-    partialImplementations: z.ZodArray<z.ZodString>;
-}, z.core.$strip>;
+    }, "strip", z.ZodTypeAny, {
+        criteriaText: string;
+        gapDescription: string;
+        severity: "critical" | "major" | "minor";
+        impact: string;
+    }, {
+        criteriaText: string;
+        gapDescription: string;
+        severity: "critical" | "major" | "minor";
+        impact: string;
+    }>, "many">;
+    missingBehaviors: z.ZodArray<z.ZodString, "many">;
+    partialImplementations: z.ZodArray<z.ZodString, "many">;
+}, "strip", z.ZodTypeAny, {
+    derivedRequirements: {
+        id: string;
+        requirement: string;
+        source: "description" | "explicit_ac" | "implied" | "ticket_type" | "technical_context";
+        importance: "expected" | "essential" | "nice_to_have";
+    }[];
+    criteriaAnalysis: {
+        status: "met" | "unmet" | "partial" | "unclear";
+        confidence: number;
+        criteriaText: string;
+        evidence: string[];
+        explanation: string;
+        relatedFiles: string[];
+        criteriaId?: string | undefined;
+    }[];
+    compliancePercentage: number;
+    gaps: {
+        criteriaText: string;
+        gapDescription: string;
+        severity: "critical" | "major" | "minor";
+        impact: string;
+    }[];
+    missingBehaviors: string[];
+    partialImplementations: string[];
+}, {
+    derivedRequirements: {
+        id: string;
+        requirement: string;
+        source: "description" | "explicit_ac" | "implied" | "ticket_type" | "technical_context";
+        importance: "expected" | "essential" | "nice_to_have";
+    }[];
+    criteriaAnalysis: {
+        status: "met" | "unmet" | "partial" | "unclear";
+        confidence: number;
+        criteriaText: string;
+        evidence: string[];
+        explanation: string;
+        relatedFiles: string[];
+        criteriaId?: string | undefined;
+    }[];
+    compliancePercentage: number;
+    gaps: {
+        criteriaText: string;
+        gapDescription: string;
+        severity: "critical" | "major" | "minor";
+        impact: string;
+    }[];
+    missingBehaviors: string[];
+    partialImplementations: string[];
+}>;
 /**
  * Peer Review Analysis - the senior developer's verdict
  */
@@ -112,48 +235,162 @@ declare const PeerReviewAnalysisSchema: z.ZodObject<{
         issue: z.ZodString;
         reason: z.ZodString;
         location: z.ZodOptional<z.ZodString>;
-    }, z.core.$strip>>;
+    }, "strip", z.ZodTypeAny, {
+        issue: string;
+        reason: string;
+        location?: string | undefined;
+    }, {
+        issue: string;
+        reason: string;
+        location?: string | undefined;
+    }>, "many">;
     warnings: z.ZodArray<z.ZodObject<{
         issue: z.ZodString;
         reason: z.ZodString;
         location: z.ZodOptional<z.ZodString>;
-    }, z.core.$strip>>;
-    recommendations: z.ZodArray<z.ZodString>;
+    }, "strip", z.ZodTypeAny, {
+        issue: string;
+        reason: string;
+        location?: string | undefined;
+    }, {
+        issue: string;
+        reason: string;
+        location?: string | undefined;
+    }>, "many">;
+    recommendations: z.ZodArray<z.ZodString, "many">;
     scopeAnalysis: z.ZodObject<{
-        inScope: z.ZodArray<z.ZodString>;
-        outOfScope: z.ZodArray<z.ZodString>;
+        inScope: z.ZodArray<z.ZodString, "many">;
+        outOfScope: z.ZodArray<z.ZodString, "many">;
         scopeCreepRisk: z.ZodBoolean;
         scopeCreepDetails: z.ZodOptional<z.ZodString>;
-    }, z.core.$strip>;
+    }, "strip", z.ZodTypeAny, {
+        inScope: string[];
+        outOfScope: string[];
+        scopeCreepRisk: boolean;
+        scopeCreepDetails?: string | undefined;
+    }, {
+        inScope: string[];
+        outOfScope: string[];
+        scopeCreepRisk: boolean;
+        scopeCreepDetails?: string | undefined;
+    }>;
     regressionRisks: z.ZodArray<z.ZodObject<{
         risk: z.ZodString;
         affectedArea: z.ZodString;
-        likelihood: z.ZodEnum<{
-            high: "high";
-            medium: "medium";
-            low: "low";
-        }>;
+        likelihood: z.ZodEnum<["high", "medium", "low"]>;
         reasoning: z.ZodString;
-    }, z.core.$strip>>;
+    }, "strip", z.ZodTypeAny, {
+        reasoning: string;
+        risk: string;
+        affectedArea: string;
+        likelihood: "high" | "medium" | "low";
+    }, {
+        reasoning: string;
+        risk: string;
+        affectedArea: string;
+        likelihood: "high" | "medium" | "low";
+    }>, "many">;
     uncoveredScenarios: z.ZodArray<z.ZodObject<{
         scenario: z.ZodString;
-        impact: z.ZodEnum<{
-            critical: "critical";
-            major: "major";
-            minor: "minor";
-        }>;
+        impact: z.ZodEnum<["critical", "major", "minor"]>;
         relatedCriteria: z.ZodOptional<z.ZodString>;
-    }, z.core.$strip>>;
+    }, "strip", z.ZodTypeAny, {
+        impact: "critical" | "major" | "minor";
+        scenario: string;
+        relatedCriteria?: string | undefined;
+    }, {
+        impact: "critical" | "major" | "minor";
+        scenario: string;
+        relatedCriteria?: string | undefined;
+    }>, "many">;
     verdict: z.ZodObject<{
         summary: z.ZodString;
-        recommendation: z.ZodEnum<{
-            approve: "approve";
-            request_changes: "request_changes";
-            needs_discussion: "needs_discussion";
-        }>;
+        recommendation: z.ZodEnum<["approve", "request_changes", "needs_discussion"]>;
         confidenceLevel: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>;
+    }, "strip", z.ZodTypeAny, {
+        recommendation: "approve" | "request_changes" | "needs_discussion";
+        summary: string;
+        confidenceLevel: number;
+    }, {
+        recommendation: "approve" | "request_changes" | "needs_discussion";
+        summary: string;
+        confidenceLevel: number;
+    }>;
+}, "strip", z.ZodTypeAny, {
+    recommendations: string[];
+    implementationCompleteness: number;
+    qualityScore: number;
+    readyForReview: boolean;
+    blockers: {
+        issue: string;
+        reason: string;
+        location?: string | undefined;
+    }[];
+    warnings: {
+        issue: string;
+        reason: string;
+        location?: string | undefined;
+    }[];
+    scopeAnalysis: {
+        inScope: string[];
+        outOfScope: string[];
+        scopeCreepRisk: boolean;
+        scopeCreepDetails?: string | undefined;
+    };
+    regressionRisks: {
+        reasoning: string;
+        risk: string;
+        affectedArea: string;
+        likelihood: "high" | "medium" | "low";
+    }[];
+    uncoveredScenarios: {
+        impact: "critical" | "major" | "minor";
+        scenario: string;
+        relatedCriteria?: string | undefined;
+    }[];
+    verdict: {
+        recommendation: "approve" | "request_changes" | "needs_discussion";
+        summary: string;
+        confidenceLevel: number;
+    };
+}, {
+    recommendations: string[];
+    implementationCompleteness: number;
+    qualityScore: number;
+    readyForReview: boolean;
+    blockers: {
+        issue: string;
+        reason: string;
+        location?: string | undefined;
+    }[];
+    warnings: {
+        issue: string;
+        reason: string;
+        location?: string | undefined;
+    }[];
+    scopeAnalysis: {
+        inScope: string[];
+        outOfScope: string[];
+        scopeCreepRisk: boolean;
+        scopeCreepDetails?: string | undefined;
+    };
+    regressionRisks: {
+        reasoning: string;
+        risk: string;
+        affectedArea: string;
+        likelihood: "high" | "medium" | "low";
+    }[];
+    uncoveredScenarios: {
+        impact: "critical" | "major" | "minor";
+        scenario: string;
+        relatedCriteria?: string | undefined;
+    }[];
+    verdict: {
+        recommendation: "approve" | "request_changes" | "needs_discussion";
+        summary: string;
+        confidenceLevel: number;
+    };
+}>;
 export type TicketQualityRating = z.infer<typeof TicketQualitySchema>;
 export type AcceptanceCriteriaValidation = z.infer<typeof AcceptanceCriteriaValidationSchema>;
 export type PeerReviewAnalysis = z.infer<typeof PeerReviewAnalysisSchema>;

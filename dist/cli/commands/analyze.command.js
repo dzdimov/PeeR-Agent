@@ -407,6 +407,8 @@ export async function analyzePR(options = {}) {
         else if (options.archDocs && !hasArchDocs) {
             console.log(chalk.yellow('⚠️  --arch-docs flag specified but no .arch-docs folder found\n'));
         }
+        // Get repo info early so we can pass it to the agent for caching
+        const repoInfo = getRepoInfo();
         const agent = new PRAnalyzerAgent({
             provider: provider,
             apiKey,
@@ -415,12 +417,14 @@ export async function analyzePR(options = {}) {
         const result = await agent.analyze(diff, title, mode, {
             useArchDocs: useArchDocs && hasArchDocs,
             repoPath: process.cwd(),
+            repoOwner: repoInfo.owner,
+            repoName: repoInfo.name,
             language: config.analysis?.language,
             framework: config.analysis?.framework,
             enableStaticAnalysis: config.analysis?.enableStaticAnalysis !== false,
         });
         // Display results
-        displayAgentResults(result, mode, options.verbose || false);
+        displayAgentResults(result, mode, options.verbose || false, options.showClassification || false);
         // Save analysis results to local database for dashboard
         try {
             const repoInfo = getRepoInfo();
@@ -460,6 +464,8 @@ export async function analyzePR(options = {}) {
                 has_test_suggestions: (result.testSuggestions?.length ?? 0) > 0 ? 1 : 0,
                 test_suggestions_count: result.testSuggestions?.length ?? 0,
                 coverage_percentage: result.coverageReport?.overallPercentage,
+                // Project classification cache (v0.3.0)
+                project_classification: result.projectClassification,
             });
             if (options.verbose) {
                 console.log(chalk.gray(`   Analysis saved to local database (PR #${prNumber})`));
@@ -603,7 +609,7 @@ export async function analyzePR(options = {}) {
 /**
  * Display agent analysis results
  */
-function displayAgentResults(result, mode, verbose) {
+function displayAgentResults(result, mode, verbose, showClassification = false) {
     console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
     console.log(chalk.green.bold('\n✨  Agent Analysis Complete!\n'));
     // Clean summary - remove markdown headers and duplicates
@@ -619,8 +625,8 @@ function displayAgentResults(result, mode, verbose) {
         console.log(chalk.white(cleanSummary));
         console.log('\n');
     }
-    // Display project classification if available
-    if (result.projectClassification) {
+    // Display project classification only if explicitly requested
+    if (showClassification && result.projectClassification) {
         console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
         console.log(result.projectClassification);
     }
@@ -749,25 +755,51 @@ function displayAgentResults(result, mode, verbose) {
     }
     // Show test suggestions if available
     if (result.testSuggestions && result.testSuggestions.length > 0) {
-        console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
-        console.log(chalk.yellow.bold(`\n🧪 Test Suggestions (${result.testSuggestions.length} files need tests)\n`));
-        for (const suggestion of result.testSuggestions) {
-            console.log(chalk.cyan(`  📝 ${suggestion.forFile}`));
-            console.log(chalk.gray(`     Framework: ${suggestion.testFramework}`));
-            if (suggestion.testFilePath) {
-                console.log(chalk.gray(`     Suggested test file: ${suggestion.testFilePath}`));
-            }
-            console.log(chalk.white(`     ${suggestion.description}\n`));
-            if (suggestion.testCode) {
-                console.log(chalk.gray('     ┌─────────────────────────────────────────'));
-                const codeLines = suggestion.testCode.split('\n').slice(0, 10);
-                codeLines.forEach((line) => {
-                    console.log(chalk.gray('     │ ') + chalk.white(line));
-                });
-                if (suggestion.testCode.split('\n').length > 10) {
-                    console.log(chalk.gray('     │ ... (copy full code below)'));
+        const newTests = result.testSuggestions.filter((s) => !s.isEnhancement);
+        const enhancements = result.testSuggestions.filter((s) => s.isEnhancement);
+        // Show new test suggestions
+        if (newTests.length > 0) {
+            console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+            console.log(chalk.yellow.bold(`\n🧪 Test Suggestions (${newTests.length} files need tests)\n`));
+            for (const suggestion of newTests) {
+                console.log(chalk.cyan(`  📝 ${suggestion.forFile}`));
+                console.log(chalk.gray(`     Framework: ${suggestion.testFramework}`));
+                if (suggestion.testFilePath) {
+                    console.log(chalk.gray(`     Suggested test file: ${suggestion.testFilePath}`));
                 }
-                console.log(chalk.gray('     └─────────────────────────────────────────\n'));
+                console.log(chalk.white(`     ${suggestion.description}\n`));
+                if (suggestion.testCode) {
+                    console.log(chalk.gray('     ┌─────────────────────────────────────────'));
+                    const codeLines = suggestion.testCode.split('\n').slice(0, 10);
+                    codeLines.forEach((line) => {
+                        console.log(chalk.gray('     │ ') + chalk.white(line));
+                    });
+                    if (suggestion.testCode.split('\n').length > 10) {
+                        console.log(chalk.gray('     │ ... (copy full code below)'));
+                    }
+                    console.log(chalk.gray('     └─────────────────────────────────────────\n'));
+                }
+            }
+        }
+        // Show test enhancement suggestions
+        if (enhancements.length > 0) {
+            console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+            console.log(chalk.green.bold(`\n🔬 Test Enhancement Suggestions (${enhancements.length} test files can be improved)\n`));
+            for (const suggestion of enhancements) {
+                console.log(chalk.cyan(`  📊 ${suggestion.existingTestFile || suggestion.testFilePath}`));
+                console.log(chalk.gray(`     Source: ${suggestion.forFile}`));
+                console.log(chalk.white(`     ${suggestion.description}\n`));
+                if (suggestion.testCode && suggestion.testCode.trim()) {
+                    console.log(chalk.gray('     ┌─────────────────────────────────────────'));
+                    const codeLines = suggestion.testCode.split('\n').slice(0, 15);
+                    codeLines.forEach((line) => {
+                        console.log(chalk.gray('     │ ') + chalk.white(line));
+                    });
+                    if (suggestion.testCode.split('\n').length > 15) {
+                        console.log(chalk.gray('     │ ... (more enhancements available)'));
+                    }
+                    console.log(chalk.gray('     └─────────────────────────────────────────\n'));
+                }
             }
         }
     }

@@ -18,7 +18,10 @@ export {
   suggestTestFilePath,
   createTestSuggestionTool,
   generateTestTemplate,
+  analyzeTestQuality,
+  formatTestEnhancement,
 } from './test-suggestion-tool.js';
+export type { TestEnhancement } from './test-suggestion-tool.js';
 
 export {
   detectCoverageTool,
