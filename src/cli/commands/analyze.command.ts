@@ -615,6 +615,12 @@ function displayAgentResults(result: any, mode: AnalysisMode, verbose: boolean):
     console.log('\n');
   }
 
+  // Display project classification if available
+  if (result.projectClassification) {
+    console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+    console.log(result.projectClassification);
+  }
+
   // Combined quick actions section - only fixes with line numbers (for PR comments)
   // Filter: only critical/warning, must have line number, sort critical first
   const prCommentFixes = result.fixes

@@ -34,3 +34,9 @@ export {
   createDevOpsCostEstimatorTool,
   formatCostEstimates,
 } from './devops-cost-estimator.js';
+
+export {
+  classifyProject,
+  createProjectClassifierTool,
+  formatClassification,
+} from './project-classifier.js';

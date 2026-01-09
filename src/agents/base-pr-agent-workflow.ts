@@ -31,6 +31,10 @@ import {
   detectCoverageTool,
   readCoverageReport,
 } from '../tools/coverage-reporter.js';
+import {
+  classifyProject,
+  formatClassification,
+} from '../tools/project-classifier.js';
 
 /**
  * Agent workflow state
@@ -391,12 +395,23 @@ export abstract class BasePRAgentWorkflow {
     testSuggestions?: TestSuggestion[];
     devOpsCostEstimates?: DevOpsCostEstimate[];
     coverageReport?: CoverageReport;
+    projectClassification?: string;
   }> {
     const result: {
       testSuggestions?: TestSuggestion[];
       devOpsCostEstimates?: DevOpsCostEstimate[];
       coverageReport?: CoverageReport;
+      projectClassification?: string;
     } = {};
+
+    // === PROJECT CLASSIFICATION ===
+    // Classify project type (business logic vs QA) to tailor recommendations
+    console.log(`🏗️  Classifying project type...`);
+    const classification = classifyProject(
+      files.map(f => ({ filename: f.path, patch: f.diff }))
+    );
+    result.projectClassification = formatClassification(classification);
+    console.log(`   → Type: ${classification.projectType} (${(classification.confidence * 100).toFixed(0)}% confidence)`);
 
     // Categorize files by type
     const codeFiles = files.filter(f => isCodeFile(f.path) && !isTestFile(f.path));
