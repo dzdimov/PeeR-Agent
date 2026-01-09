@@ -211,10 +211,27 @@ export class BasePRAgentWorkflow {
         // Smart change detection - only include relevant outputs
         const files = parseDiff(context.diff);
         const enhancedResult = await this.detectAndAnalyzeChangeTypes(files, context);
+        // Convert currentRisks to fixes format for backward compatibility
+        const fixes = finalState.currentRisks.map((risk) => {
+            // Risk can be a string or RiskItem object
+            if (typeof risk === 'string') {
+                return {
+                    file: '',
+                    comment: risk,
+                    severity: 'warning',
+                };
+            }
+            return {
+                file: risk.file || '',
+                line: risk.line,
+                comment: risk.description || risk.reason || String(risk),
+                severity: risk.severity || 'warning',
+            };
+        });
         return {
             summary: finalState.currentSummary,
             fileAnalyses: finalState.fileAnalyses,
-            fixes: [],
+            fixes,
             overallComplexity: finalState.currentComplexity,
             overallRisks: finalState.currentRisks,
             recommendations: finalState.recommendations,
@@ -278,10 +295,27 @@ export class BasePRAgentWorkflow {
             // Smart change detection - only include relevant outputs
             const files = parseDiff(context.diff);
             const enhancedResult = await this.detectAndAnalyzeChangeTypes(files, context);
+            // Convert currentRisks to fixes format for backward compatibility
+            const fixes = state.currentRisks.map((risk) => {
+                // Risk can be a string or RiskItem object
+                if (typeof risk === 'string') {
+                    return {
+                        file: '',
+                        comment: risk,
+                        severity: 'warning',
+                    };
+                }
+                return {
+                    file: risk.file || '',
+                    line: risk.line,
+                    comment: risk.description || risk.reason || String(risk),
+                    severity: risk.severity || 'warning',
+                };
+            });
             return {
                 summary: state.currentSummary,
                 fileAnalyses: state.fileAnalyses,
-                fixes: [],
+                fixes,
                 overallComplexity: state.currentComplexity,
                 overallRisks: state.currentRisks,
                 recommendations: state.recommendations,

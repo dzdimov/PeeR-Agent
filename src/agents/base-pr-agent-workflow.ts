@@ -282,10 +282,28 @@ export abstract class BasePRAgentWorkflow {
     const files = parseDiff(context.diff);
     const enhancedResult = await this.detectAndAnalyzeChangeTypes(files, context);
 
+    // Convert currentRisks to fixes format for backward compatibility
+    const fixes = finalState.currentRisks.map((risk: any) => {
+      // Risk can be a string or RiskItem object
+      if (typeof risk === 'string') {
+        return {
+          file: '',
+          comment: risk,
+          severity: 'warning' as const,
+        };
+      }
+      return {
+        file: risk.file || '',
+        line: risk.line,
+        comment: risk.description || risk.reason || String(risk),
+        severity: (risk.severity as 'critical' | 'warning' | 'suggestion') || 'warning',
+      };
+    });
+
     return {
       summary: finalState.currentSummary,
       fileAnalyses: finalState.fileAnalyses,
-      fixes: [],
+      fixes,
       overallComplexity: finalState.currentComplexity,
       overallRisks: finalState.currentRisks,
       recommendations: finalState.recommendations,
@@ -361,10 +379,28 @@ export abstract class BasePRAgentWorkflow {
       const files = parseDiff(context.diff);
       const enhancedResult = await this.detectAndAnalyzeChangeTypes(files, context);
 
+      // Convert currentRisks to fixes format for backward compatibility
+      const fixes = state.currentRisks.map((risk: any) => {
+        // Risk can be a string or RiskItem object
+        if (typeof risk === 'string') {
+          return {
+            file: '',
+            comment: risk,
+            severity: 'warning' as const,
+          };
+        }
+        return {
+          file: risk.file || '',
+          line: risk.line,
+          comment: risk.description || risk.reason || String(risk),
+          severity: (risk.severity as 'critical' | 'warning' | 'suggestion') || 'warning',
+        };
+      });
+
       return {
         summary: state.currentSummary,
         fileAnalyses: state.fileAnalyses,
-        fixes: [],
+        fixes,
         overallComplexity: state.currentComplexity,
         overallRisks: state.currentRisks,
         recommendations: state.recommendations,

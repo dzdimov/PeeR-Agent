@@ -315,6 +315,65 @@ function renderCharts(stats) {
             devOpsContainer.parentElement.innerHTML = '<p class="text-gray-500 text-center py-8">No DevOps/IaC changes detected yet.</p>';
         }
     }
+
+    // DevOps Cost Trend Chart (v0.2.0)
+    if (stats.devOpsCosts && stats.devOpsCosts.costTrend && stats.devOpsCosts.costTrend.length > 0) {
+        const costTrendCtx = document.getElementById('chart-cost-trend').getContext('2d');
+        const trendLabels = stats.devOpsCosts.costTrend.map(t => t.date);
+        const trendData = stats.devOpsCosts.costTrend.map(t => t.cost);
+        
+        new Chart(costTrendCtx, {
+            type: 'line',
+            data: {
+                labels: trendLabels,
+                datasets: [{
+                    label: 'Daily DevOps Cost',
+                    data: trendData,
+                    borderColor: 'rgb(16, 185, 129)',
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    tension: 0.3,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Cost ($)' },
+                        ticks: {
+                            callback: function(value) {
+                                return '$' + value.toFixed(2);
+                            }
+                        }
+                    },
+                    x: {
+                        title: { display: true, text: 'Date' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return 'Cost: $' + context.parsed.y.toFixed(2);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    } else {
+        // Show placeholder when no cost trend data
+        const costTrendContainer = document.getElementById('chart-cost-trend');
+        if (costTrendContainer) {
+            costTrendContainer.parentElement.innerHTML = '<p class="text-gray-500 dark:text-gray-400 text-center py-8">No cost trend data available yet.</p>';
+        }
+    }
 }
 
 function renderTable(recent) {
