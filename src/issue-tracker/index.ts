@@ -7,6 +7,7 @@
 
 // Types
 export * from '../types/issue-tracker.types.js';
+export { type AnalysisPrompt } from '../types/agent.types.js';
 
 // Jira Client
 export { JiraMcpClient, type JiraConfig } from './jira-mcp-client.js';
@@ -26,9 +27,11 @@ export {
 // Sub-Agent
 export {
   JiraSubAgent,
+  PeerReviewMode,
   type JiraSubAgentResult,
   type JiraSubAgentContext,
   type TicketQualityRating,
   type AcceptanceCriteriaValidation,
   type PeerReviewAnalysis,
+  type PromptOnlyResult,
 } from '../agents/jira-sub-agent.js';

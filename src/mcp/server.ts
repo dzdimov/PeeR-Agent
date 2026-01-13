@@ -31,9 +31,14 @@ import { PRAnalyzerAgent } from '../agents/pr-analyzer-agent.js';
 import { getDashboardStats, getRecentAnalyses, saveAnalysis } from '../db/index.js';
 import { loadUserConfig, type UserConfig } from '../cli/utils/config-loader.js';
 import { resolveDefaultBranch } from '../utils/branch-resolver.js';
-import { StubChatModel } from './stub-chat-model.js';
 import { parseDiff } from '../tools/pr-analysis-tools.js';
-import type { Fix, DiffFile } from '../types/agent.types.js';
+import type { Fix, DiffFile, ExecutionMode, AgentResult, PromptOnlyResult, AnalysisPrompt } from '../types/agent.types.js';
+import { ExecutionMode as ExecutionModeEnum } from '../types/agent.types.js';
+import {
+  createPeerReviewIntegration,
+  PeerReviewMode,
+  type PeerReviewResult
+} from '../issue-tracker/index.js';
 
 // Dashboard server state
 let httpServer: any = null;
@@ -170,6 +175,180 @@ function extractTicketReferences(
   }
 
   return refs;
+}
+
+/**
+ * Parse diff to extract file information (same as CLI)
+ */
+function parseDiffFiles(diff: string): Array<{
+  path: string;
+  additions: number;
+  deletions: number;
+  status: string;
+}> {
+  const files: Array<{
+    path: string;
+    additions: number;
+    deletions: number;
+    status: string;
+  }> = [];
+
+  const filePattern = /^diff --git a\/(.+?) b\/(.+?)$/gm;
+  let match;
+
+  while ((match = filePattern.exec(diff)) !== null) {
+    const filePath = match[2] !== '/dev/null' ? match[2] : match[1];
+    const isNew = match[1] === '/dev/null' || match[1].startsWith('dev/null');
+    const isDeleted = match[2] === '/dev/null';
+
+    // Count additions and deletions (simplified)
+    const fileStart = match.index;
+    const nextFileMatch = filePattern.exec(diff);
+    const fileEnd = nextFileMatch ? nextFileMatch.index : diff.length;
+    filePattern.lastIndex = match.index + 1; // Reset to continue from after current match
+
+    const fileContent = diff.substring(fileStart, fileEnd);
+    const additions = (fileContent.match(/^\+[^+]/gm) || []).length;
+    const deletions = (fileContent.match(/^-[^-]/gm) || []).length;
+
+    files.push({
+      path: filePath,
+      additions,
+      deletions,
+      status: isNew ? 'added' : isDeleted ? 'deleted' : 'modified',
+    });
+  }
+
+  return files;
+}
+
+/**
+ * Run Peer Review analysis (EXACT same logic as CLI, using StubChatModel for pass-through)
+ */
+async function runPeerReview(
+  config: any,
+  diff: string,
+  title: string | undefined,
+  prAnalysisResult: any,
+  verbose: boolean,
+  workDir: string
+): Promise<PeerReviewResult | null> {
+  try {
+    // Use PROMPT_ONLY mode - no LLM needed, returns prompts for calling LLM to execute
+    // This is the LLM-agnostic approach that works without API keys
+    const peerReviewConfig = config.peerReview || {};
+    const integration = createPeerReviewIntegration(peerReviewConfig, PeerReviewMode.PROMPT_ONLY);
+
+    if (!integration.isEnabled()) {
+      console.error('[MCP Server] Peer Review enabled but not configured');
+      if (verbose) {
+        console.error('[MCP Server] Set peerReview.useMcp=true in config');
+      }
+      return null;
+    }
+
+    // Get branch name for ticket extraction
+    let branchName: string | undefined;
+    try {
+      branchName = execSync('git rev-parse --abbrev-ref HEAD', {
+        encoding: 'utf-8',
+        cwd: workDir
+      }).trim();
+    } catch {
+      // Ignore - branch name is optional
+    }
+
+    // Get commit messages for ticket extraction
+    let commitMessages: string[] = [];
+    try {
+      const commits = execSync('git log --oneline -10', {
+        encoding: 'utf-8',
+        cwd: workDir
+      });
+      commitMessages = commits.trim().split('\n');
+    } catch {
+      // Ignore
+    }
+
+    // Parse diff to get file info
+    const files = parseDiffFiles(diff);
+
+    console.error('[MCP Server] Running peer review analysis...');
+
+    // Run peer review analysis - EXACT same call as CLI (analyze.command.ts line 992-1002)
+    const result = await integration.analyze({
+      prTitle: title || 'Untitled PR',
+      prDescription: undefined,
+      branchName,
+      commitMessages,
+      diff,
+      files,
+      prSummary: prAnalysisResult.summary,
+      prRisks: prAnalysisResult.overallRisks,
+      prComplexity: prAnalysisResult.overallComplexity,
+    });
+
+    console.error('[MCP Server] Peer review analysis complete');
+    return result;
+  } catch (error: any) {
+    console.error('[MCP Server] Peer review failed:', error.message);
+    if (verbose) {
+      console.error('[MCP Server] Error details:', error.stack);
+    }
+    return null;
+  }
+}
+
+/**
+ * Format peer review prompts for PROMPT_ONLY mode
+ * Returns formatted prompts that the calling LLM should execute
+ */
+function formatPeerReviewPrompts(peerReviewResult: PeerReviewResult): string {
+  if (!peerReviewResult.promptOnlyResult) {
+    return '';
+  }
+
+  const { prompts, context } = peerReviewResult.promptOnlyResult;
+  const lines: string[] = [];
+
+  lines.push('');
+  lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  lines.push('');
+  lines.push('🎯 Peer Review Analysis (LLM-Agnostic Mode)');
+  lines.push('');
+
+  if (peerReviewResult.primaryTicket) {
+    const ticket = peerReviewResult.primaryTicket;
+    lines.push(`📋 Ticket: ${ticket.key} - ${ticket.title}`);
+    lines.push(`🔗 ${ticket.url || 'N/A'}`);
+    lines.push('');
+  }
+
+  lines.push('The following analysis prompts should be executed sequentially:');
+  lines.push('');
+
+  prompts.forEach((prompt, i) => {
+    const stepTitle = prompt.step === 'ticketQuality'
+      ? '1️⃣ Ticket Quality Assessment'
+      : prompt.step === 'acValidation'
+      ? '2️⃣ Acceptance Criteria Validation'
+      : '3️⃣ Peer Review Analysis';
+
+    lines.push(`${stepTitle}`);
+    lines.push('');
+    lines.push('```');
+    lines.push(prompt.prompt);
+    lines.push('```');
+    lines.push('');
+    lines.push(`Expected output format: ${prompt.step}`);
+    lines.push('');
+  });
+
+  lines.push('Note: These prompts are generated by the PR Agent peer review system.');
+  lines.push('Execute them sequentially and provide structured analysis based on the prompts.');
+  lines.push('');
+
+  return lines.join('\n');
 }
 
 /**
@@ -351,7 +530,8 @@ Returns formatted analysis for the calling LLM to display and enhance with AI in
         // Ignore
       }
 
-      const peerReviewEnabled = args.peerReview ?? config.peerReview?.enabled ?? false;
+      // Enable peer review by default if configured (same as CLI)
+      const peerReviewEnabled = args.peerReview ?? config.peerReview?.enabled ?? true;
       const ticketRefs = extractTicketReferences(
         title,
         currentBranch,
@@ -359,20 +539,15 @@ Returns formatted analysis for the calling LLM to display and enhance with AI in
         config.peerReview?.defaultProject
       );
 
-      // Create PRAnalyzerAgent with StubChatModel
-      // The stub model triggers fallback paths, allowing:
-      // 1. Static analysis (semgrep, pattern matching) to run
-      // 2. Default recommendations to be generated
-      // The calling LLM (Claude Code) provides AI insights after receiving response
-      // Note: When Claude Code adds MCP sampling support (Issue #1785),
-      // we can switch to MCPChatModel for true pass-through LLM access
-      const stubModel = new StubChatModel();
-      const agent = new PRAnalyzerAgent({ chatModel: stubModel });
+      // Create PRAnalyzerAgent in PROMPT_ONLY mode (LLM-agnostic)
+      // Instead of executing prompts with an API key, we return prompts for the calling LLM to execute
+      // This works with all MCP clients (Claude Code, Cursor, Windsurf, etc.) without API keys
+      const agent = new PRAnalyzerAgent({ mode: ExecutionModeEnum.PROMPT_ONLY });
 
-      // Run analysis using PRAnalyzerAgent (same workflow as CLI)
+      // Run analysis to get prompts (no LLM execution)
       const useArchDocs = args.archDocs !== false;
-      console.error('[MCP Server] Running PRAnalyzerAgent.analyze()...');
-      const result = await agent.analyze(
+      console.error('[MCP Server] Building analysis prompts in PROMPT_ONLY mode...');
+      const analysisResult = await agent.analyze(
         diff,
         title,
         { summary: true, risks: true, complexity: true },
@@ -385,61 +560,71 @@ Returns formatted analysis for the calling LLM to display and enhance with AI in
         }
       );
 
-      console.error('[MCP Server] Analysis complete. Result:');
-      console.error('  - summary:', result.summary?.substring(0, 100));
-      console.error('  - recommendations:', JSON.stringify(result.recommendations));
-      console.error('  - fixes count:', result.fixes?.length);
-      console.error('  - fileAnalyses size:', result.fileAnalyses?.size);
+      console.error('[MCP Server] Prompts built successfully');
+      console.error('  - mode:', analysisResult.mode);
+      console.error('  - prompt count:', analysisResult.mode === 'prompt_only' ? analysisResult.prompts.length : 'N/A');
 
-      // Calculate overall complexity from file analyses
-      let overallComplexity = 1;
-      if (result.fileAnalyses && result.fileAnalyses.size > 0) {
-        const complexities = Array.from(result.fileAnalyses.values()).map((f: any) => f.complexity || 1);
-        overallComplexity = Math.round(complexities.reduce((a: number, b: number) => a + b, 0) / complexities.length);
+      // Type guard: MCP server always uses PROMPT_ONLY mode
+      if (analysisResult.mode !== 'prompt_only') {
+        throw new Error('Expected prompt-only result in MCP PROMPT_ONLY mode');
       }
 
-      // Save to database (same as CLI)
-      try {
-        const author = getGitAuthor(workDir);
-        const prNumber = Math.floor(Date.now() / 1000) % 100000;
+      // Get peer review prompts if enabled
+      let peerReviewPrompts: AnalysisPrompt[] = [];
+      if (peerReviewEnabled) {
+        try {
+          const peerReviewResult = await runPeerReview(
+            config,
+            diff,
+            title,
+            analysisResult as any, // Pass context - runPeerReview will get prompts too
+            verbose,
+            workDir
+          );
 
-        saveAnalysis({
-          pr_number: prNumber,
-          repo_owner: repoInfo.owner,
-          repo_name: repoInfo.name,
-          author,
-          title: title || 'Untitled Analysis',
-          complexity: overallComplexity,
-          risks_count: result.fixes?.filter((f: Fix) => f.severity === 'critical' || f.severity === 'warning').length || 0,
-          risks: JSON.stringify(result.fixes?.filter((f: Fix) => f.severity === 'critical' || f.severity === 'warning').map((f: Fix) => f.comment) || []),
-          recommendations: JSON.stringify(result.recommendations || []),
-          // Peer review not run in MCP server (handled by calling LLM)
-          peer_review_enabled: 0,
-        });
-      } catch {
-        // Ignore save errors
+          if (peerReviewResult && peerReviewResult.mode === 'prompt_only' && peerReviewResult.promptOnlyResult) {
+            peerReviewPrompts = peerReviewResult.promptOnlyResult.prompts;
+          }
+        } catch (error: any) {
+          console.error('[MCP Server] Peer review prompt building failed:', error.message);
+        }
       }
 
-      // Parse diff to get files for output
-      const files: DiffFile[] = parseDiff(diff);
+      // Format all prompts for output
+      const allPrompts = [...analysisResult.prompts, ...peerReviewPrompts];
+      let outputText = '🤖 **PR Agent Analysis - LLM-Agnostic Mode**\n\n';
+      outputText += 'The following prompts should be executed sequentially using your LLM:\n\n';
+      outputText += '---\n\n';
 
-      // Build output data
-      const outputData = {
-        title: title || 'Untitled',
-        repository: `${repoInfo.owner}/${repoInfo.name}`,
-        currentBranch,
-        baseBranch: baseBranch || 'staged',
-        files,
-        fixes: result.fixes || [],
-        recommendations: result.recommendations || [],
-        complexity: overallComplexity,
-      };
+      allPrompts.forEach((prompt, i) => {
+        const stepTitle = {
+          'fileAnalysis': `📄 Step ${i + 1}: File Analysis`,
+          'riskDetection': `⚠️  Step ${i + 1}: Risk Detection`,
+          'summaryGeneration': `📋 Step ${i + 1}: Summary Generation`,
+          'selfRefinement': `✨ Step ${i + 1}: Self Refinement`,
+          'ticketQuality': `🎯 Step ${i + 1}: Ticket Quality Assessment`,
+          'acValidation': `✅ Step ${i + 1}: Acceptance Criteria Validation`,
+          'peerReview': `👥 Step ${i + 1}: Peer Review Analysis`,
+        }[prompt.step] || `Step ${i + 1}`;
+
+        outputText += `## ${stepTitle}\n\n`;
+        outputText += `**Instructions:** ${prompt.instructions}\n\n`;
+        outputText += '**Prompt:**\n```\n';
+        outputText += prompt.prompt.substring(0, 5000); // Limit prompt size
+        if (prompt.prompt.length > 5000) {
+          outputText += '\n... (truncated for display)\n';
+        }
+        outputText += '\n```\n\n';
+        outputText += '---\n\n';
+      });
+
+      outputText += '\n**Note:** These prompts are generated by PR Agent. Execute them sequentially and analyze the results.\n';
 
       // Return formatted output
       return {
         content: [{
           type: 'text' as const,
-          text: formatCLIOutput(outputData, ticketRefs, peerReviewEnabled),
+          text: outputText,
         }],
       };
     } catch (error: any) {
@@ -452,6 +637,11 @@ Returns formatted analysis for the calling LLM to display and enhance with AI in
     }
   }
 );
+
+/* OLD CODE REMOVED - MCP server now uses PROMPT_ONLY mode
+     Removed old EXECUTE mode logic that is no longer needed
+     (database saving, result property access, etc.)
+*/
 
 /**
  * dashboard - Start the web dashboard (same as CLI 'pr-agent dashboard')
@@ -533,7 +723,7 @@ server.tool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('PR Agent MCP Server started - uses same PRAnalyzerAgent as CLI');
+  console.error('PR Agent MCP Server started - LLM-agnostic mode with PROMPT_ONLY');
 }
 
 main().catch((error) => {

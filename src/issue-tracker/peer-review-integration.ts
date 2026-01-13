@@ -10,7 +10,13 @@
  */
 
 import { JiraMcpClient, JiraConfig } from './jira-mcp-client.js';
-import { JiraSubAgent, JiraSubAgentResult, JiraSubAgentContext } from '../agents/jira-sub-agent.js';
+import {
+  JiraSubAgent,
+  JiraSubAgentResult,
+  JiraSubAgentContext,
+  PeerReviewMode,
+  PromptOnlyResult,
+} from '../agents/jira-sub-agent.js';
 import {
   IssueTrackerProvider,
   IssueTrackerConfig,
@@ -46,10 +52,12 @@ export interface PeerReviewContext {
 
 export interface PeerReviewResult {
   enabled: boolean;
+  mode?: 'execute' | 'prompt_only';
   ticketReferences: TicketReference[];
   linkedTickets: IssueTicket[];
   primaryTicket?: IssueTicket;
   analysis?: JiraSubAgentResult;
+  promptOnlyResult?: PromptOnlyResult;
   error?: string;
 }
 
@@ -59,20 +67,32 @@ export class PeerReviewIntegration {
   private provider: IssueTrackerProvider | null = null;
   private subAgent: JiraSubAgent | null = null;
   private config: IssueTrackerConfig;
+  private mode: PeerReviewMode;
 
-  constructor(config: IssueTrackerConfig, llm?: BaseLanguageModel) {
+  constructor(
+    config: IssueTrackerConfig,
+    mode: PeerReviewMode = PeerReviewMode.EXECUTE,
+    llm?: BaseLanguageModel
+  ) {
     this.config = config;
+    this.mode = mode;
     this.initializeProvider();
-    if (llm) {
-      this.subAgent = new JiraSubAgent(llm);
+
+    // Create sub-agent with appropriate mode
+    if (mode === PeerReviewMode.EXECUTE && llm) {
+      this.subAgent = new JiraSubAgent(mode, llm);
+    } else if (mode === PeerReviewMode.PROMPT_ONLY) {
+      this.subAgent = new JiraSubAgent(mode);
     }
   }
 
   /**
-   * Set the LLM for the sub-agent
+   * Set the LLM for the sub-agent (EXECUTE mode only)
    */
   setLLM(llm: BaseLanguageModel): void {
-    this.subAgent = new JiraSubAgent(llm);
+    if (this.mode === PeerReviewMode.EXECUTE) {
+      this.subAgent = new JiraSubAgent(this.mode, llm);
+    }
   }
 
   /**
@@ -150,6 +170,8 @@ export class PeerReviewIntegration {
 
       // Step 3: Run sub-agent analysis (if configured)
       let analysis: JiraSubAgentResult | undefined;
+      let promptOnlyResult: PromptOnlyResult | undefined;
+
       if (this.subAgent && primaryTicket) {
         const subAgentContext: JiraSubAgentContext = {
           ticket: primaryTicket,
@@ -161,15 +183,24 @@ export class PeerReviewIntegration {
           prRisks: context.prRisks,
         };
 
-        analysis = await this.subAgent.analyze(subAgentContext);
+        const result = await this.subAgent.analyze(subAgentContext);
+
+        // Handle both EXECUTE and PROMPT_ONLY modes
+        if ('mode' in result && result.mode === 'prompt_only') {
+          promptOnlyResult = result;
+        } else {
+          analysis = result as JiraSubAgentResult;
+        }
       }
 
       return {
         enabled: true,
+        mode: this.mode === PeerReviewMode.PROMPT_ONLY ? 'prompt_only' : 'execute',
         ticketReferences,
         linkedTickets,
         primaryTicket,
         analysis,
+        promptOnlyResult,
       };
     } catch (error) {
       return {
@@ -209,9 +240,14 @@ export class PeerReviewIntegration {
 
 /**
  * Create a PeerReviewIntegration from user config
+ *
+ * @param userConfig - User configuration from .pragent.config.json
+ * @param mode - Execution mode (EXECUTE for CLI with API key, PROMPT_ONLY for MCP without API key)
+ * @param llm - LangChain LLM instance (required for EXECUTE mode, ignored for PROMPT_ONLY mode)
  */
 export function createPeerReviewIntegration(
   userConfig: PeerReviewUserConfig,
+  mode: PeerReviewMode = PeerReviewMode.EXECUTE,
   llm?: BaseLanguageModel
 ): PeerReviewIntegration {
   const issueTrackerConfig: IssueTrackerConfig = {
@@ -236,7 +272,7 @@ export function createPeerReviewIntegration(
     verbose: userConfig.verbose ?? false,
   };
 
-  return new PeerReviewIntegration(issueTrackerConfig, llm);
+  return new PeerReviewIntegration(issueTrackerConfig, mode, llm);
 }
 
 // ========== User Config Type ==========

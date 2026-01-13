@@ -3,6 +3,7 @@
  * LangChain-based agent for intelligent PR analysis
  */
 import { BasePRAgentWorkflow } from './base-pr-agent-workflow.js';
+import { ExecutionMode } from '../types/agent.types.js';
 import { parseDiff } from '../tools/pr-analysis-tools.js';
 import { ProviderFactory } from '../providers/index.js';
 import { parseAllArchDocs, archDocsExists } from '../utils/arch-docs-parser.js';
@@ -12,22 +13,27 @@ import { buildArchDocsContext } from '../utils/arch-docs-rag.js';
  */
 export class PRAnalyzerAgent extends BasePRAgentWorkflow {
     constructor(options = {}) {
+        // Determine execution mode
+        const mode = options.mode || ExecutionMode.EXECUTE;
         let model;
-        // If a pre-configured BaseChatModel is passed (MCP case), use it directly
-        if (options.chatModel) {
-            model = options.chatModel;
+        // Only create model in EXECUTE mode
+        if (mode === ExecutionMode.EXECUTE) {
+            // If a pre-configured BaseChatModel is passed (MCP case), use it directly
+            if (options.chatModel) {
+                model = options.chatModel;
+            }
+            else {
+                // Otherwise create model via ProviderFactory (CLI/Action case - backward compatible)
+                model = ProviderFactory.createChatModel({
+                    provider: options.provider || 'anthropic',
+                    apiKey: options.apiKey,
+                    model: options.model,
+                    temperature: options.temperature ?? 0.2,
+                    maxTokens: options.maxTokens ?? 4000,
+                });
+            }
         }
-        else {
-            // Otherwise create model via ProviderFactory (CLI/Action case - backward compatible)
-            model = ProviderFactory.createChatModel({
-                provider: options.provider || 'anthropic',
-                apiKey: options.apiKey,
-                model: options.model,
-                temperature: options.temperature ?? 0.2,
-                maxTokens: options.maxTokens ?? 4000,
-            });
-        }
-        super(model);
+        super(mode, model);
     }
     /**
      * Get agent metadata
@@ -48,6 +54,7 @@ export class PRAnalyzerAgent extends BasePRAgentWorkflow {
     }
     /**
      * Analyze a PR with full agent workflow
+     * Returns either executed results (EXECUTE mode) or prompts (PROMPT_ONLY mode)
      */
     async analyze(diff, title, mode, options) {
         // Parse diff into files

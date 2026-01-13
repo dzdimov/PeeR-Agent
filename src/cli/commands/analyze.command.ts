@@ -11,8 +11,10 @@ import { ConfigurationError, GitHubAPIError, GitError } from '../../utils/errors
 import {
   createPeerReviewIntegration,
   formatPeerReviewOutput,
+  PeerReviewMode,
   type PeerReviewResult,
 } from '../../issue-tracker/index.js';
+import { ExecutionMode, type AgentResult } from '../../types/agent.types.js';
 import { ProviderFactory, type SupportedProvider } from '../../providers/index.js';
 import { Fix } from '../../types/agent.types.js';
 
@@ -468,17 +470,24 @@ export async function analyzePR(options: AnalyzeOptions = {}): Promise<void> {
     }
 
     const agent = new PRAnalyzerAgent({
+      mode: ExecutionMode.EXECUTE,  // CLI always executes with API key
       provider: provider,
       apiKey,
       model,
     });
-    const result = await agent.analyze(diff, title, mode, {
+    const analysisResult = await agent.analyze(diff, title, mode, {
       useArchDocs: useArchDocs && hasArchDocs,
       repoPath: process.cwd(),
       language: config.analysis?.language,
       framework: config.analysis?.framework,
       enableStaticAnalysis: config.analysis?.enableStaticAnalysis !== false,
     });
+
+    // Type guard: CLI always uses EXECUTE mode, so result is always AgentResult
+    if (analysisResult.mode === 'prompt_only') {
+      throw new Error('Unexpected prompt-only result in CLI EXECUTE mode');
+    }
+    const result = analysisResult as AgentResult;
 
     // Display results
     displayAgentResults(result, mode, options.verbose || false);
@@ -952,9 +961,9 @@ async function runPeerReview(
       maxTokens: 4000,
     });
 
-    // Create peer review integration from config, passing the LLM
+    // Create peer review integration from config, passing the LLM in EXECUTE mode
     const peerReviewConfig = config.peerReview || {};
-    const integration = createPeerReviewIntegration(peerReviewConfig, llm);
+    const integration = createPeerReviewIntegration(peerReviewConfig, PeerReviewMode.EXECUTE, llm);
 
     if (!integration.isEnabled()) {
       spinner.warn('Peer Review enabled but not configured. Add Jira settings to config.');

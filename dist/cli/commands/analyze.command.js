@@ -7,7 +7,8 @@ import { loadUserConfig, getApiKey } from '../utils/config-loader.js';
 import { archDocsExists } from '../../utils/arch-docs-parser.js';
 import { resolveDefaultBranch } from '../../utils/branch-resolver.js';
 import { ConfigurationError, GitHubAPIError, GitError } from '../../utils/errors.js';
-import { createPeerReviewIntegration, formatPeerReviewOutput, } from '../../issue-tracker/index.js';
+import { createPeerReviewIntegration, formatPeerReviewOutput, PeerReviewMode, } from '../../issue-tracker/index.js';
+import { ExecutionMode } from '../../types/agent.types.js';
 import { ProviderFactory } from '../../providers/index.js';
 import { saveAnalysis } from '../../db/index.js';
 /**
@@ -408,17 +409,23 @@ export async function analyzePR(options = {}) {
             console.log(chalk.yellow('⚠️  --arch-docs flag specified but no .arch-docs folder found\n'));
         }
         const agent = new PRAnalyzerAgent({
+            mode: ExecutionMode.EXECUTE, // CLI always executes with API key
             provider: provider,
             apiKey,
             model,
         });
-        const result = await agent.analyze(diff, title, mode, {
+        const analysisResult = await agent.analyze(diff, title, mode, {
             useArchDocs: useArchDocs && hasArchDocs,
             repoPath: process.cwd(),
             language: config.analysis?.language,
             framework: config.analysis?.framework,
             enableStaticAnalysis: config.analysis?.enableStaticAnalysis !== false,
         });
+        // Type guard: CLI always uses EXECUTE mode, so result is always AgentResult
+        if (analysisResult.mode === 'prompt_only') {
+            throw new Error('Unexpected prompt-only result in CLI EXECUTE mode');
+        }
+        const result = analysisResult;
         // Display results
         displayAgentResults(result, mode, options.verbose || false);
         // Save analysis results to local database for dashboard
@@ -834,9 +841,9 @@ async function runPeerReview(config, diff, title, prAnalysisResult, verbose, pro
             temperature: 0.2,
             maxTokens: 4000,
         });
-        // Create peer review integration from config, passing the LLM
+        // Create peer review integration from config, passing the LLM in EXECUTE mode
         const peerReviewConfig = config.peerReview || {};
-        const integration = createPeerReviewIntegration(peerReviewConfig, llm);
+        const integration = createPeerReviewIntegration(peerReviewConfig, PeerReviewMode.EXECUTE, llm);
         if (!integration.isEnabled()) {
             spinner.warn('Peer Review enabled but not configured. Add Jira settings to config.');
             console.log(chalk.gray('   Run: pr-agent config --set peerReview.instanceUrl=https://your.atlassian.net'));
