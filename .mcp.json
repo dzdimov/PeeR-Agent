@@ -11,6 +11,11 @@
   "$comment9": "  • dashboard - Start web dashboard to view analysis history, code quality trends, and ROI metrics",
   "$comment10": "",
   "$comment11": "The MCP server imports and reuses the CLI's PRAnalyzerAgent and analysis tools.",
+  "$comment12": "",
+  "$comment13": "===== Required MCP Servers for Full Functionality =====",
+  "$comment14": "For Jira integration: Install @modelcontextprotocol/server-atlassian",
+  "$comment15": "For GitHub integration: Install @modelcontextprotocol/server-github",
+  "$comment16": "The PR Agent extracts Jira ticket IDs, then Claude Code uses the Atlassian MCP server to fetch ticket details.",
   "mcpServers": {
     "pr-agent": {
       "command": "npm",
@@ -18,6 +23,14 @@
       "env": {
         "NODE_ENV": "development"
       }
+    },
+    "atlassian": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-atlassian"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"]
     }
   }
 }

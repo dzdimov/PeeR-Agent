@@ -500,6 +500,35 @@ The MCP server does everything the CLI does **except** calling AI providers:
 
 The calling tool's LLM then adds AI-powered insights to the analysis.
 
+### Integration with Other MCP Servers
+
+For full functionality, install these official MCP servers alongside PR Agent:
+
+#### Atlassian MCP Server (Jira Integration)
+The PR Agent extracts Jira ticket IDs (e.g., `PROJ-123`), then Claude Code uses the Atlassian MCP server to fetch ticket details and validate against requirements.
+
+**Installation**: Already configured in `.mcp.json` and `.vscode/mcp.json`. Claude Code will prompt to enable on first use.
+
+**Setup**: Requires Jira credentials. See [Atlassian MCP docs](https://github.com/modelcontextprotocol/servers/tree/main/src/atlassian).
+
+#### GitHub MCP Server (Repository Management)
+Provides GitHub API access for repository operations and PR management.
+
+**Installation**: Already configured in `.mcp.json` and `.vscode/mcp.json`. Claude Code will prompt to enable on first use.
+
+**Setup**: Requires GitHub authentication. See [GitHub MCP docs](https://github.com/modelcontextprotocol/servers/tree/main/src/github).
+
+**Workflow Example:**
+```
+You: "Analyze my PR changes"
+  ↓
+PR Agent: Extracts PROJ-123 from branch, analyzes diff, detects risks
+  ↓
+Claude Code + Atlassian MCP: Fetches PROJ-123 details from Jira
+  ↓
+Result: Comprehensive review with ticket validation
+```
+
 ### CLI Parity
 
 | Feature | CLI | MCP Server |

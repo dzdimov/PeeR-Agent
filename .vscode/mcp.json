@@ -5,6 +5,9 @@
   "$comment4": "After 'npm install && npm run build', the server provides these tools:",
   "$comment5": "  - analyze: Parse git diff, detect risks, calculate complexity, extract Jira tickets",
   "$comment6": "  - dashboard: Start web dashboard for viewing analysis history and metrics",
+  "$comment7": "",
+  "$comment8": "For full Jira integration, also install @modelcontextprotocol/server-atlassian",
+  "$comment9": "For GitHub integration, also install @modelcontextprotocol/server-github",
   "servers": {
     "pr-agent": {
       "type": "stdio",
@@ -12,6 +15,18 @@
       "args": ["run", "mcp"],
       "cwd": "${workspaceFolder}",
       "description": "PR Agent MCP Server - AI-powered PR analysis (analyze, dashboard)"
+    },
+    "atlassian": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-atlassian"],
+      "description": "Atlassian MCP Server - Jira ticket details and validation"
+    },
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "description": "GitHub MCP Server - Repository and PR management"
     }
   }
 }
