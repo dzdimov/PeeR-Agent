@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import { execSync } from 'child_process';
 import chalk from 'chalk';
 import ora from 'ora';
+import open from 'open';
 import { PRAnalyzerAgent } from '../../agents/pr-analyzer-agent.js';
 import { loadUserConfig, getApiKey } from '../utils/config-loader.js';
 import { archDocsExists } from '../../utils/arch-docs-parser.js';
@@ -639,6 +640,18 @@ export async function analyzePR(options: AnalyzeOptions = {}): Promise<void> {
           }
         }
       }
+    }
+
+    // Auto-open dashboard after analysis completes
+    try {
+      const dashboardUrl = 'http://localhost:3000';
+      console.log(chalk.gray(`\n📊 Opening dashboard at ${dashboardUrl}...`));
+      await open(dashboardUrl);
+    } catch (openError: any) {
+      if (options.verbose) {
+        console.log(chalk.yellow(`   Could not open dashboard automatically: ${openError.message}`));
+      }
+      console.log(chalk.gray(`   View results at: http://localhost:3000`));
     }
   } catch (error: any) {
     spinner.fail('Analysis failed');

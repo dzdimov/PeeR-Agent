@@ -44,7 +44,7 @@ const DEFAULT_CONFIG = {
         showRecommendations: true,
     },
     peerReview: {
-        enabled: false,
+        enabled: true,
         useMcp: false,
         analyzeAcceptanceCriteria: true,
         rateTicketQuality: true,
