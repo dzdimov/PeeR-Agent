@@ -29,7 +29,7 @@ export class PRAnalyzerAgent extends BasePRAgentWorkflow {
                     apiKey: options.apiKey,
                     model: options.model,
                     temperature: options.temperature ?? 0.2,
-                    maxTokens: options.maxTokens ?? 4000,
+                    maxTokens: options.maxTokens ?? 50000,
                 });
             }
         }

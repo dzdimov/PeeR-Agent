@@ -839,7 +839,7 @@ async function runPeerReview(config, diff, title, prAnalysisResult, verbose, pro
             apiKey: providerOptions.apiKey,
             model: providerOptions.model,
             temperature: 0.2,
-            maxTokens: 4000,
+            maxTokens: 50000,
         });
         // Create peer review integration from config, passing the LLM in EXECUTE mode
         const peerReviewConfig = config.peerReview || {};
