@@ -201,6 +201,7 @@ export interface IssueTrackerConfig {
   // Output settings
   includeTicketDetails: boolean;
   verbose: boolean;
+  verbosity: PeerReviewVerbosity;
 }
 
 /**
@@ -209,3 +210,10 @@ export interface IssueTrackerConfig {
 export type IssueTrackerProviderFactory = (
   config: IssueTrackerConfig
 ) => IssueTrackerProvider | null;
+
+export type PeerReviewVerbosity =  
+  | 'minimal'
+  | 'compact' 
+  | 'standard' 
+  | 'detailed' 
+  | 'verbose';

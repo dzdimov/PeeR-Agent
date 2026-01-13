@@ -36,6 +36,7 @@ interface AnalyzeOptions {
   maxCost?: number;
   archDocs?: boolean;
   peerReview?: boolean; // Enable Jira peer review integration
+  peerReviewVerbosity?: string; // Peer review output verbosity
 }
 
 interface AnalysisMode {
@@ -548,7 +549,7 @@ export async function analyzePR(options: AnalyzeOptions = {}): Promise<void> {
         provider,
         apiKey,
         model,
-      });
+      }, options.peerReviewVerbosity);
 
       // Save peer review results to database for dashboard
       if (peerReviewResult && peerReviewResult.enabled && peerReviewResult.analysis) {
@@ -938,7 +939,8 @@ async function runPeerReview(
   title: string | undefined,
   prAnalysisResult: any,
   verbose: boolean,
-  providerOptions: { provider: SupportedProvider; apiKey: string; model?: string }
+  providerOptions: { provider: SupportedProvider; apiKey: string; model?: string },
+  verbosityOverride?: string
 ): Promise<PeerReviewResult | null> {
   const spinner = ora('Running Peer Review analysis...').start();
 
@@ -1004,7 +1006,9 @@ async function runPeerReview(
     spinner.succeed('Peer Review analysis complete');
 
     // Display peer review results
-    const output = formatPeerReviewOutput(result);
+    // CLI flag takes precedence over config file
+    const verbosity = verbosityOverride || peerReviewConfig.verbosity || 'compact';
+    const output = formatPeerReviewOutput(result, verbosity);
     if (output) {
       console.log(output);
     }

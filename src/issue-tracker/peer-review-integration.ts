@@ -17,6 +17,7 @@ import {
   IssueTrackerType,
   IssueTicket,
   TicketReference,
+  PeerReviewVerbosity,
 } from '../types/issue-tracker.types.js';
 import { BaseLanguageModel } from '@langchain/core/language_models/base';
 
@@ -234,6 +235,7 @@ export function createPeerReviewIntegration(
     ticketPatterns: userConfig.ticketPatterns,
     includeTicketDetails: userConfig.includeTicketDetails ?? true,
     verbose: userConfig.verbose ?? false,
+    verbosity: userConfig.verbosity ?? 'compact',
   };
 
   return new PeerReviewIntegration(issueTrackerConfig, llm);
@@ -279,6 +281,7 @@ export interface PeerReviewUserConfig {
   // Output settings
   includeTicketDetails?: boolean;
   verbose?: boolean;
+  verbosity?: 'minimal' | 'compact' | 'standard' | 'detailed' | 'verbose';
 }
 
 // ========== Output Formatting ==========
@@ -286,42 +289,62 @@ export interface PeerReviewUserConfig {
 /**
  * Format peer review results for CLI output
  */
-export function formatPeerReviewOutput(result: PeerReviewResult): string {
+export function formatPeerReviewOutput(
+  result: PeerReviewResult,
+  verbosity: PeerReviewVerbosity = 'compact'
+): string {
   const lines: string[] = [];
 
   if (!result.enabled) {
     return ''; // Silently skip if not enabled
   }
 
+  if (result.error) {
+    if (verbosity !== 'minimal') {
+      lines.push('');
+      lines.push('═══════════════════════════════════════════════════════════════');
+      lines.push('                    🔍 PEER REVIEW ANALYSIS');
+      lines.push('═══════════════════════════════════════════════════════════════');
+      lines.push('');
+    }
+    lines.push(`⚠️  ${result.error}`);
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  // MINIMAL MODE: Ultra-compact single-line output
+  if (verbosity === 'minimal') {
+    return formatMinimalOutput(result);
+  }
+
+  // All other modes: Start with header
   lines.push('');
   lines.push('═══════════════════════════════════════════════════════════════');
   lines.push('                    🔍 PEER REVIEW ANALYSIS');
   lines.push('═══════════════════════════════════════════════════════════════');
   lines.push('');
 
-  if (result.error) {
-    lines.push(`⚠️  ${result.error}`);
-    lines.push('');
-    return lines.join('\n');
-  }
-
-  // Ticket Information
+  // Ticket Information (show in compact+)
   if (result.primaryTicket) {
     const ticket = result.primaryTicket;
     lines.push('📋 LINKED TICKET');
     lines.push('───────────────────────────────────────────────────────────────');
     lines.push(`   Key:    ${ticket.key}`);
     lines.push(`   Title:  ${ticket.title}`);
-    lines.push(`   Type:   ${ticket.type.toUpperCase()}`);
-    lines.push(`   Status: ${ticket.status}`);
-    if (ticket.storyPoints) {
-      lines.push(`   Points: ${ticket.storyPoints}`);
+
+    // Show type/status for standard+
+    if (verbosity !== 'compact') {
+      lines.push(`   Type:   ${ticket.type.toUpperCase()}`);
+      lines.push(`   Status: ${ticket.status}`);
+      if (ticket.storyPoints) {
+        lines.push(`   Points: ${ticket.storyPoints}`);
+      }
     }
     lines.push('');
   }
 
-  // Ticket Quality Rating
-  if (result.analysis?.ticketQuality) {
+  // Ticket Quality Rating (show in standard+)
+  if (result.analysis?.ticketQuality && shouldShowTicketQuality(verbosity)) {
     const quality = result.analysis.ticketQuality;
     const scoreEmoji = getScoreEmoji(quality.overallScore);
 
@@ -329,6 +352,8 @@ export function formatPeerReviewOutput(result: PeerReviewResult): string {
     lines.push('───────────────────────────────────────────────────────────────');
     lines.push(`   Overall Score: ${scoreEmoji} ${quality.overallScore}/100 (${quality.tier.toUpperCase()})`);
     lines.push('');
+
+    // Show dimension scores for standard+
     lines.push('   Dimension Scores:');
     lines.push(`   • Description Clarity:     ${formatScore(quality.dimensions.descriptionClarity)}`);
     lines.push(`   • Acceptance Criteria:     ${formatScore(quality.dimensions.acceptanceCriteriaQuality)}`);
@@ -344,7 +369,8 @@ export function formatPeerReviewOutput(result: PeerReviewResult): string {
       lines.push('');
     }
 
-    if (quality.feedback.weaknesses.length > 0) {
+    // Show weaknesses only in verbose mode
+    if (verbosity === 'verbose' && quality.feedback.weaknesses.length > 0) {
       lines.push('   ⚠️  Ticket Weaknesses:');
       quality.feedback.weaknesses.forEach((w) => lines.push(`      • ${w}`));
       lines.push('');
@@ -361,8 +387,8 @@ export function formatPeerReviewOutput(result: PeerReviewResult): string {
     lines.push(`   Compliance: ${complianceEmoji} ${validation.compliancePercentage}%`);
     lines.push('');
 
-    // Show derived requirements (what the agent understood from the ticket)
-    if (validation.derivedRequirements && validation.derivedRequirements.length > 0) {
+    // Show derived requirements (show in detailed+)
+    if (shouldShowDerivedRequirements(verbosity) && validation.derivedRequirements && validation.derivedRequirements.length > 0) {
       lines.push('   📋 DERIVED REQUIREMENTS (from ticket analysis):');
       validation.derivedRequirements.forEach((req) => {
         const importanceIcon = {
@@ -382,35 +408,47 @@ export function formatPeerReviewOutput(result: PeerReviewResult): string {
       lines.push('');
     }
 
-    // Show each requirement's validation status
-    lines.push('   📊 REQUIREMENT STATUS:');
-    validation.criteriaAnalysis.forEach((c) => {
-      const statusEmoji = {
-        met: '✅',
-        partial: '🟡',
-        unmet: '❌',
-        unclear: '❓',
-      }[c.status];
-      lines.push(`   ${statusEmoji} ${c.criteriaText.substring(0, 60)}${c.criteriaText.length > 60 ? '...' : ''}`);
-      if (c.status !== 'met') {
-        lines.push(`      └─ ${c.explanation.substring(0, 70)}${c.explanation.length > 70 ? '...' : ''}`);
-      }
-    });
-    lines.push('');
+    // Show requirement status (compact+: show unmet only, standard+: show all)
+    const maxRequirements = verbosity === 'compact' ? 5 : Infinity;
+    const requirementsToShow = verbosity === 'compact'
+      ? validation.criteriaAnalysis.filter(c => c.status !== 'met').slice(0, maxRequirements)
+      : validation.criteriaAnalysis;
 
-    // Show gaps with impact
-    if (validation.gaps.length > 0) {
-      lines.push('   ❌ COVERAGE GAPS:');
-      validation.gaps.forEach((gap) => {
-        const severityEmoji = { critical: '🔴', major: '🟠', minor: '🟡' }[gap.severity];
-        lines.push(`   ${severityEmoji} [${gap.severity.toUpperCase()}] ${gap.gapDescription}`);
-        lines.push(`      └─ Impact: ${gap.impact}`);
+    if (requirementsToShow.length > 0) {
+      lines.push('   📊 REQUIREMENT STATUS:');
+      requirementsToShow.forEach((c) => {
+        const statusEmoji = {
+          met: '✅',
+          partial: '🟡',
+          unmet: '❌',
+          unclear: '❓',
+        }[c.status];
+        lines.push(`   ${statusEmoji} ${c.criteriaText.substring(0, 60)}${c.criteriaText.length > 60 ? '...' : ''}`);
+        if (c.status !== 'met' && verbosity !== 'compact') {
+          lines.push(`      └─ ${c.explanation.substring(0, 70)}${c.explanation.length > 70 ? '...' : ''}`);
+        }
       });
       lines.push('');
     }
 
-    // Show missing behaviors identified by the agent
-    if (validation.missingBehaviors && validation.missingBehaviors.length > 0) {
+    // Show gaps with impact (compact: top 3, standard+: all)
+    if (validation.gaps.length > 0) {
+      const maxGaps = verbosity === 'compact' ? 3 : Infinity;
+      const gapsToShow = validation.gaps.slice(0, maxGaps);
+
+      lines.push('   ❌ COVERAGE GAPS:');
+      gapsToShow.forEach((gap) => {
+        const severityEmoji = { critical: '🔴', major: '🟠', minor: '🟡' }[gap.severity];
+        lines.push(`   ${severityEmoji} [${gap.severity.toUpperCase()}] ${gap.gapDescription}`);
+        if (verbosity !== 'compact') {
+          lines.push(`      └─ Impact: ${gap.impact}`);
+        }
+      });
+      lines.push('');
+    }
+
+    // Show missing behaviors (detailed+ only)
+    if ((verbosity === 'detailed' || verbosity === 'verbose') && validation.missingBehaviors && validation.missingBehaviors.length > 0) {
       lines.push('   ⚠️  MISSING BEHAVIORS:');
       validation.missingBehaviors.forEach((b) => lines.push(`      • ${b}`));
       lines.push('');
@@ -458,58 +496,71 @@ export function formatPeerReviewOutput(result: PeerReviewResult): string {
       lines.push('');
     }
 
-    // Warnings with details
+    // Warnings with details (limit based on verbosity)
     if (review.warnings.length > 0) {
-      lines.push('   ⚠️  WARNINGS (should address):');
-      review.warnings.forEach((w) => {
-        lines.push(`      • ${w.issue}`);
-        if (w.reason) {
-          lines.push(`        Reason: ${w.reason}`);
+      const maxWarnings = getMaxWarnings(verbosity);
+      const warningsToShow = review.warnings.slice(0, maxWarnings);
+
+      if (warningsToShow.length > 0) {
+        lines.push('   ⚠️  WARNINGS (should address):');
+        warningsToShow.forEach((w) => {
+          lines.push(`      • ${w.issue}`);
+          if (w.reason && verbosity !== 'compact') {
+            lines.push(`        Reason: ${w.reason}`);
+          }
+        });
+        lines.push('');
+      }
+    }
+
+    // Regression risks (show in standard+, limit based on verbosity)
+    if (review.regressionRisks && review.regressionRisks.length > 0 && verbosity !== 'compact') {
+      const maxRisks = shouldShowAllRisks(verbosity) ? Infinity : 3;
+      const risksToShow = review.regressionRisks.slice(0, maxRisks);
+
+      lines.push('   ⚡ POTENTIAL REGRESSION RISKS:');
+      risksToShow.forEach((r) => {
+        const likelihoodEmoji = { high: '🔴', medium: '🟠', low: '🟡' }[r.likelihood];
+        lines.push(`      ${likelihoodEmoji} ${r.risk}`);
+        if (verbosity !== 'standard') {
+          lines.push(`        Affected: ${r.affectedArea}`);
+          lines.push(`        Why: ${r.reasoning}`);
         }
       });
       lines.push('');
     }
 
-    // Regression risks - critical for senior dev perspective
-    if (review.regressionRisks && review.regressionRisks.length > 0) {
-      lines.push('   ⚡ POTENTIAL REGRESSION RISKS:');
-      review.regressionRisks.forEach((r) => {
-        const likelihoodEmoji = { high: '🔴', medium: '🟠', low: '🟡' }[r.likelihood];
-        lines.push(`      ${likelihoodEmoji} ${r.risk}`);
-        lines.push(`        Affected: ${r.affectedArea}`);
-        lines.push(`        Why: ${r.reasoning}`);
-      });
-      lines.push('');
-    }
-
-    // Uncovered scenarios - what the senior dev noticed isn't handled
-    if (review.uncoveredScenarios && review.uncoveredScenarios.length > 0) {
+    // Uncovered scenarios (show in detailed+)
+    if ((verbosity === 'detailed' || verbosity === 'verbose') && review.uncoveredScenarios && review.uncoveredScenarios.length > 0) {
       lines.push('   🔍 SCENARIOS NOT HANDLED:');
       review.uncoveredScenarios.forEach((s) => {
         const impactEmoji = { critical: '🔴', major: '🟠', minor: '🟡' }[s.impact];
         lines.push(`      ${impactEmoji} ${s.scenario}`);
-        if (s.relatedCriteria) {
+        if (s.relatedCriteria && verbosity === 'verbose') {
           lines.push(`        Related to: ${s.relatedCriteria}`);
         }
       });
       lines.push('');
     }
 
-    // Scope analysis
-    if (review.scopeAnalysis.scopeCreepRisk) {
+    // Scope analysis (show in standard+)
+    if (verbosity !== 'compact' && review.scopeAnalysis.scopeCreepRisk) {
       lines.push('   ⚠️  SCOPE CREEP DETECTED:');
       lines.push(`      ${review.scopeAnalysis.scopeCreepDetails || 'Changes may exceed ticket scope'}`);
-      if (review.scopeAnalysis.outOfScope.length > 0) {
+      if ((verbosity === 'detailed' || verbosity === 'verbose') && review.scopeAnalysis.outOfScope.length > 0) {
         lines.push('      Out of scope changes:');
         review.scopeAnalysis.outOfScope.slice(0, 3).forEach((s) => lines.push(`      • ${s}`));
       }
       lines.push('');
     }
 
-    // Recommendations
+    // Recommendations (limit based on verbosity)
     if (review.recommendations.length > 0) {
+      const maxRecs = verbosity === 'compact' ? 3 : verbosity === 'standard' ? 5 : Infinity;
+      const recsToShow = review.recommendations.slice(0, maxRecs);
+
       lines.push('   💡 RECOMMENDATIONS:');
-      review.recommendations.slice(0, 3).forEach((r) => lines.push(`      • ${r}`));
+      recsToShow.forEach((r) => lines.push(`      • ${r}`));
       lines.push('');
     }
   }
@@ -518,6 +569,78 @@ export function formatPeerReviewOutput(result: PeerReviewResult): string {
   lines.push('');
 
   return lines.join('\n');
+}
+
+/**
+ * Format minimal output (ultra-compact single line)
+ */
+function formatMinimalOutput(result: PeerReviewResult): string {
+  const lines: string[] = [];
+
+  // Build compact summary line
+  const parts: string[] = [];
+
+  // Verdict
+  if (result.analysis?.peerReview) {
+    const review = result.analysis.peerReview;
+    const verdictEmoji = {
+      approve: '✅',
+      request_changes: '❌',
+      needs_discussion: '💬',
+    }[review.verdict.recommendation];
+    const verdictText = {
+      approve: 'APPROVED',
+      request_changes: 'CHANGES REQUESTED',
+      needs_discussion: 'NEEDS DISCUSSION',
+    }[review.verdict.recommendation];
+    parts.push(`${verdictEmoji} ${verdictText}`);
+  }
+
+  // Compliance
+  if (result.analysis?.acValidation) {
+    parts.push(`${result.analysis.acValidation.compliancePercentage}% compliant`);
+  }
+
+  // Ticket reference
+  if (result.primaryTicket) {
+    parts.push(`${result.primaryTicket.key}: ${result.primaryTicket.title.substring(0, 40)}${result.primaryTicket.title.length > 40 ? '...' : ''}`);
+  }
+
+  // Blockers/Warnings count
+  if (result.analysis?.peerReview) {
+    const blockers = result.analysis.peerReview.blockers.length;
+    const warnings = result.analysis.peerReview.warnings.length;
+    parts.push(`🚫 ${blockers} blockers`);
+    parts.push(`⚠️  ${warnings} warnings`);
+  }
+
+  lines.push('═══════════════════════════════════════════════════════════════');
+  lines.push(`🔍 PEER REVIEW: ${parts.join(' | ')}`);
+  lines.push('═══════════════════════════════════════════════════════════════');
+
+  return lines.join('\n');
+}
+
+function shouldShowTicketQuality(verbosity: PeerReviewVerbosity): boolean {
+  return ['standard','detailed','verbose'].includes(verbosity);
+}
+
+function shouldShowDerivedRequirements(verbosity: PeerReviewVerbosity): boolean {
+  return ['detailed','verbose'].includes(verbosity);
+}
+
+function shouldShowAllRisks(verbosity: PeerReviewVerbosity): boolean {
+  return ['detailed','verbose'].includes(verbosity);
+}
+
+function getMaxWarnings(verbosity: PeerReviewVerbosity): number {
+  switch (verbosity) {
+    case 'minimal': return 0;
+    case 'compact': return 3;
+    case 'standard': return 5;
+    case 'detailed': 
+    case 'verbose': return Infinity;
+  }
 }
 
 function getScoreEmoji(score: number): string {
@@ -536,7 +659,10 @@ function formatScore(score: number): string {
 /**
  * Format peer review results for GitHub PR comment
  */
-export function formatPeerReviewMarkdown(result: PeerReviewResult): string {
+export function formatPeerReviewMarkdown(
+  result: PeerReviewResult,
+  verbosity: PeerReviewVerbosity = 'compact'
+): string {
   if (!result.enabled || result.error) {
     return '';
   }
@@ -566,13 +692,21 @@ export function formatPeerReviewMarkdown(result: PeerReviewResult): string {
     lines.push('');
   }
 
-  // Ticket Information
+  // Ticket Information (show in compact+)
   if (result.primaryTicket) {
     const ticket = result.primaryTicket;
     lines.push(`### 📋 Linked Ticket: [${ticket.key}](${ticket.url})`);
     lines.push('');
     lines.push(`**${ticket.title}**`);
     lines.push('');
+
+    // Show details for standard+ (use collapsible for compact)
+    if (verbosity === 'compact') {
+      lines.push('<details>');
+      lines.push('<summary>Ticket Details</summary>');
+      lines.push('');
+    }
+
     lines.push(`| Property | Value |`);
     lines.push(`|----------|-------|`);
     lines.push(`| Type | ${ticket.type} |`);
@@ -580,28 +714,43 @@ export function formatPeerReviewMarkdown(result: PeerReviewResult): string {
     if (ticket.storyPoints) {
       lines.push(`| Story Points | ${ticket.storyPoints} |`);
     }
+
+    if (verbosity === 'compact') {
+      lines.push('');
+      lines.push('</details>');
+    }
     lines.push('');
   }
 
-  // Ticket Quality
-  if (result.analysis?.ticketQuality) {
+  // Ticket Quality (show in standard+, collapsed in compact)
+  if (result.analysis?.ticketQuality && shouldShowTicketQuality(verbosity)) {
     const quality = result.analysis.ticketQuality;
-    lines.push('### 📊 Ticket Quality');
-    lines.push('');
-    lines.push(`**Overall Score: ${quality.overallScore}/100** (${quality.tier})`);
-    lines.push('');
+
+    if (verbosity === 'compact') {
+      // Compact: Just show score, collapse details
+      lines.push('<details>');
+      lines.push(`<summary>📊 Ticket Quality: ${quality.overallScore}/100 (${quality.tier})</summary>`);
+      lines.push('');
+    } else {
+      lines.push('### 📊 Ticket Quality');
+      lines.push('');
+      lines.push(`**Overall Score: ${quality.overallScore}/100** (${quality.tier})`);
+      lines.push('');
+    }
 
     if (!quality.reviewable) {
       lines.push(`> ⚠️ **Warning:** ${quality.reviewabilityReason}`);
       lines.push('');
     }
 
-    if (quality.feedback.weaknesses.length > 0) {
-      lines.push('<details>');
-      lines.push('<summary>Ticket Weaknesses</summary>');
+    if (verbosity === 'verbose' && quality.feedback.weaknesses.length > 0) {
+      lines.push('**Ticket Weaknesses:**');
       lines.push('');
       quality.feedback.weaknesses.forEach((w) => lines.push(`- ${w}`));
       lines.push('');
+    }
+
+    if (verbosity === 'compact') {
       lines.push('</details>');
       lines.push('');
     }
@@ -615,8 +764,8 @@ export function formatPeerReviewMarkdown(result: PeerReviewResult): string {
     lines.push(`**Compliance: ${validation.compliancePercentage}%**`);
     lines.push('');
 
-    // Show derived requirements
-    if (validation.derivedRequirements && validation.derivedRequirements.length > 0) {
+    // Show derived requirements (detailed+ only, always collapsible)
+    if (shouldShowDerivedRequirements(verbosity) && validation.derivedRequirements && validation.derivedRequirements.length > 0) {
       lines.push('<details>');
       lines.push('<summary>📋 Derived Requirements (from ticket analysis)</summary>');
       lines.push('');
@@ -631,20 +780,32 @@ export function formatPeerReviewMarkdown(result: PeerReviewResult): string {
       lines.push('');
     }
 
-    lines.push('| Status | Requirement |');
-    lines.push('|--------|-------------|');
-    validation.criteriaAnalysis.forEach((c) => {
-      const statusEmoji = { met: '✅', partial: '🟡', unmet: '❌', unclear: '❓' }[c.status];
-      lines.push(`| ${statusEmoji} ${c.status} | ${c.criteriaText.substring(0, 80)}${c.criteriaText.length > 80 ? '...' : ''} |`);
-    });
-    lines.push('');
+    // Show requirement status (compact: unmet only, standard+: all)
+    const requirementsToShow = verbosity === 'compact'
+      ? validation.criteriaAnalysis.filter(c => c.status !== 'met').slice(0, 5)
+      : validation.criteriaAnalysis;
+
+    if (requirementsToShow.length > 0) {
+      lines.push('| Status | Requirement |');
+      lines.push('|--------|-------------|');
+      requirementsToShow.forEach((c) => {
+        const statusEmoji = { met: '✅', partial: '🟡', unmet: '❌', unclear: '❓' }[c.status];
+        lines.push(`| ${statusEmoji} ${c.status} | ${c.criteriaText.substring(0, 80)}${c.criteriaText.length > 80 ? '...' : ''} |`);
+      });
+      lines.push('');
+    }
 
     if (validation.gaps.length > 0) {
+      const maxGaps = verbosity === 'compact' ? 3 : Infinity;
+      const gapsToShow = validation.gaps.slice(0, maxGaps);
+
       lines.push('#### ❌ Coverage Gaps');
       lines.push('');
-      validation.gaps.forEach((gap) => {
+      gapsToShow.forEach((gap) => {
         lines.push(`- **[${gap.severity}]** ${gap.gapDescription}`);
-        lines.push(`  - _Impact:_ ${gap.impact}`);
+        if (verbosity !== 'compact') {
+          lines.push(`  - _Impact:_ ${gap.impact}`);
+        }
       });
       lines.push('');
     }
@@ -676,23 +837,31 @@ export function formatPeerReviewMarkdown(result: PeerReviewResult): string {
     }
 
     if (review.warnings.length > 0) {
-      lines.push('#### ⚠️ Warnings (Should Address)');
-      lines.push('');
-      review.warnings.forEach((w) => {
-        lines.push(`- **${w.issue}**`);
-        if (w.reason) {
-          lines.push(`  - ${w.reason}`);
-        }
-      });
-      lines.push('');
+      const maxWarnings = getMaxWarnings(verbosity);
+      const warningsToShow = review.warnings.slice(0, maxWarnings);
+
+      if (warningsToShow.length > 0) {
+        lines.push('#### ⚠️ Warnings (Should Address)');
+        lines.push('');
+        warningsToShow.forEach((w) => {
+          lines.push(`- **${w.issue}**`);
+          if (w.reason && verbosity !== 'compact') {
+            lines.push(`  - ${w.reason}`);
+          }
+        });
+        lines.push('');
+      }
     }
 
-    // Regression risks
-    if (review.regressionRisks && review.regressionRisks.length > 0) {
+    // Regression risks (show in standard+, always collapsible)
+    if (review.regressionRisks && review.regressionRisks.length > 0 && verbosity !== 'compact') {
+      const maxRisks = shouldShowAllRisks(verbosity) ? Infinity : 3;
+      const risksToShow = review.regressionRisks.slice(0, maxRisks);
+
       lines.push('<details>');
       lines.push('<summary>⚡ Potential Regression Risks</summary>');
       lines.push('');
-      review.regressionRisks.forEach((r) => {
+      risksToShow.forEach((r) => {
         lines.push(`- **${r.risk}** (${r.likelihood} likelihood)`);
         lines.push(`  - Affects: ${r.affectedArea}`);
         lines.push(`  - Reason: ${r.reasoning}`);
@@ -702,14 +871,14 @@ export function formatPeerReviewMarkdown(result: PeerReviewResult): string {
       lines.push('');
     }
 
-    // Uncovered scenarios
-    if (review.uncoveredScenarios && review.uncoveredScenarios.length > 0) {
+    // Uncovered scenarios (detailed+ only)
+    if ((verbosity === 'detailed' || verbosity === 'verbose') && review.uncoveredScenarios && review.uncoveredScenarios.length > 0) {
       lines.push('<details>');
       lines.push('<summary>🔍 Scenarios Not Handled</summary>');
       lines.push('');
       review.uncoveredScenarios.forEach((s) => {
         lines.push(`- **[${s.impact}]** ${s.scenario}`);
-        if (s.relatedCriteria) {
+        if (s.relatedCriteria && verbosity === 'verbose') {
           lines.push(`  - Related to: ${s.relatedCriteria}`);
         }
       });
@@ -718,8 +887,8 @@ export function formatPeerReviewMarkdown(result: PeerReviewResult): string {
       lines.push('');
     }
 
-    // Scope creep
-    if (review.scopeAnalysis.scopeCreepRisk) {
+    // Scope creep (standard+ only)
+    if (verbosity !== 'compact' && review.scopeAnalysis.scopeCreepRisk) {
       lines.push('> ⚠️ **Scope Creep Detected:** ' + (review.scopeAnalysis.scopeCreepDetails || 'Changes may exceed ticket scope'));
       lines.push('');
     }

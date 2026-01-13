@@ -131,8 +131,10 @@ export interface IssueTrackerConfig {
     ticketPatterns?: string[];
     includeTicketDetails: boolean;
     verbose: boolean;
+    verbosity: PeerReviewVerbosity;
 }
 /**
  * Factory function type for creating providers
  */
 export type IssueTrackerProviderFactory = (config: IssueTrackerConfig) => IssueTrackerProvider | null;
+export type PeerReviewVerbosity = 'minimal' | 'compact' | 'standard' | 'detailed' | 'verbose';

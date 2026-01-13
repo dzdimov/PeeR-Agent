@@ -46,6 +46,7 @@ program
   .option('--arch-docs', 'Use architecture documentation from .arch-docs folder (auto-detected by default)')
   .option('--max-cost <dollars>', 'Maximum cost in dollars', '5.0')
   .option('--verbose', 'Enable verbose output', false)
+  .option('--peer-review-verbosity <level>', 'Peer review output verbosity: minimal, compact, standard, detailed, verbose (default: compact)')
   .action(analyzePR);
 
 // Config command

@@ -15,6 +15,7 @@ interface AnalyzeOptions {
     maxCost?: number;
     archDocs?: boolean;
     peerReview?: boolean;
+    peerReviewVerbosity?: string;
 }
 /**
  * Analyze command - analyze PR diffs with AI

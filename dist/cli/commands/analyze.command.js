@@ -481,7 +481,7 @@ export async function analyzePR(options = {}) {
                 provider,
                 apiKey,
                 model,
-            });
+            }, options.peerReviewVerbosity);
             // Save peer review results to database for dashboard
             if (peerReviewResult && peerReviewResult.enabled && peerReviewResult.analysis) {
                 try {
@@ -823,7 +823,7 @@ function displayAgentResults(result, mode, verbose) {
  * - Validates implementation against derived requirements
  * - Provides senior-dev style verdict
  */
-async function runPeerReview(config, diff, title, prAnalysisResult, verbose, providerOptions) {
+async function runPeerReview(config, diff, title, prAnalysisResult, verbose, providerOptions, verbosityOverride) {
     const spinner = ora('Running Peer Review analysis...').start();
     try {
         // Create LLM using the same provider as main analysis
@@ -880,7 +880,9 @@ async function runPeerReview(config, diff, title, prAnalysisResult, verbose, pro
         });
         spinner.succeed('Peer Review analysis complete');
         // Display peer review results
-        const output = formatPeerReviewOutput(result);
+        // CLI flag takes precedence over config file
+        const verbosity = verbosityOverride || peerReviewConfig.verbosity || 'compact';
+        const output = formatPeerReviewOutput(result, verbosity);
         if (output) {
             console.log(output);
         }

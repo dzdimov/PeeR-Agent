@@ -92,3 +92,106 @@ User Input → CLI/Action Interface → Config Loader → PRAnalyzerAgent
 - The GitHub Action bundle in `dist/` must be committed after changes to action code
 - Environment variables `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_API_KEY` can be used instead of config file
 - Default branch detection uses: config file → GitHub API → git commands → fallback to `origin/main`
+
+## Peer Review Verbosity Levels
+
+The peer review output supports 5 verbosity levels to control the amount of detail shown:
+
+### Configuration
+
+**In `.pragent.config.json`:**
+```json
+{
+  "peerReview": {
+    "enabled": true,
+    "verbosity": "compact"  // minimal | compact | standard | detailed | verbose
+  }
+}
+```
+
+**Via CLI flag (overrides config):**
+```bash
+pr-agent analyze --peer-review-verbosity minimal
+pr-agent analyze --peer-review-verbosity detailed
+```
+
+### Verbosity Levels
+
+#### `minimal` (3 lines)
+Ultra-compact single-line summary for CI/CD status checks:
+```
+═══════════════════════════════════════════════════════════════
+🔍 PEER REVIEW: ✅ APPROVED | 85% compliant | PROJ-123 | 🚫 0 blockers | ⚠️ 2 warnings
+═══════════════════════════════════════════════════════════════
+```
+
+#### `compact` (15-30 lines) - **DEFAULT**
+Essential information for code review:
+- Ticket key + title
+- Verdict + confidence
+- Compliance percentage
+- Top 5 unmet requirements (no explanations)
+- Top 3 coverage gaps (no impact details)
+- Top 3 warnings (no reasons)
+- Top 3 recommendations
+
+**Use case**: Most users, GitHub PR comments (with collapsible sections)
+
+#### `standard` (40-80 lines)
+Thorough code review with details:
+- All from `compact` +
+- Ticket type/status/story points
+- Full quality dimensions (7 scores)
+- All requirements with explanations
+- All gaps with impact analysis
+- Top 3 regression risks (names only)
+- Scope creep detection
+- Top 5 recommendations
+
+**Use case**: Senior developers, thorough reviews
+
+#### `detailed` (100-150 lines)
+Deep analysis for investigation:
+- All from `standard` +
+- Derived requirements from ticket
+- All regression risks (with affected areas + reasoning)
+- Uncovered scenarios
+- Missing behaviors
+- Out-of-scope changes
+
+**Use case**: Debugging ticket issues, compliance audits
+
+#### `verbose` (150-230+ lines)
+Debug mode with maximum detail:
+- All from `detailed` +
+- Ticket weaknesses
+- Full explanations for partial matches
+- Related criteria for scenarios
+
+**Use case**: Development, training the sub-agent
+
+### Examples
+
+**Quick feedback (CI/CD):**
+```json
+{ "peerReview": { "verbosity": "minimal" } }
+```
+
+**Code reviews (default):**
+```json
+{ "peerReview": { "verbosity": "compact" } }  // or omit - it's the default
+```
+
+**Debugging/audits:**
+```json
+{ "peerReview": { "verbosity": "verbose" } }
+```
+
+**CLI override:**
+```bash
+# Use verbose output for this analysis only
+pr-agent analyze --peer-review-verbosity verbose
+
+# Use minimal output
+pr-agent analyze --peer-review-verbosity minimal
+```
