@@ -111,14 +111,18 @@ pr-agent help
 
 ### MCP Server Installation
 
-The MCP server provides LLM-agnostic PR analysis for tools like Claude Code, Cursor, Cline, and Windsurf. **No API keys required** - it uses the calling tool's LLM.
+> **Note**: PR Agent is primarily a CLI tool. The MCP server (`src/mcp/`) is an additional component that exposes the same analysis functionality via the Model Context Protocol for use with Claude Code, Cursor, Cline, and Windsurf.
+
+The MCP server is **LLM-agnostic** - it uses the calling tool's AI instead of requiring API keys. It provides two tools: `analyze` (PR analysis) and `dashboard` (web UI).
 
 ```bash
 # Install globally
-npm install -g pr-agent
+npm install -g @techdebtgpt/pr-agent
 
-# The MCP server is available as pr-agent-mcp
+# The MCP server binary is available as pr-agent-mcp
 ```
+
+**For local development** (working on this repository), see [MCP-LOCAL-SETUP.md](MCP-LOCAL-SETUP.md) for team setup instructions.
 
 See [MCP Server](#mcp-server) section for configuration details.
 
@@ -392,17 +396,25 @@ Access the dashboard at `http://YOUR_SERVER_IP:3000/`.
 
 ## MCP Server
 
-The MCP (Model Context Protocol) Server **mirrors the CLI workflow exactly**, providing LLM-agnostic PR analysis for any MCP-compatible tool. It uses the same configuration file (`.pragent.config.json`) and supports all CLI features.
+> **Architecture**: PR Agent is primarily a **CLI tool**. The MCP server (`src/mcp/server.ts`) is a component that imports and reuses the CLI's core `PRAnalyzerAgent` to expose the same functionality via the Model Context Protocol.
 
-### Supported Tools
+The MCP server **mirrors the CLI workflow exactly**, providing LLM-agnostic PR analysis for any MCP-compatible tool. It uses the same configuration file (`.pragent.config.json`) and supports all CLI features.
+
+### Supported MCP Clients
 
 - **Claude Code** - Anthropic's official CLI
+- **VS Code + GitHub Copilot** - Using `.vscode/mcp.json`
 - **Cursor** - AI-first code editor
 - **Cline** - VS Code extension
 - **Windsurf** - AI code editor
-- **GitHub Copilot** (with MCP support)
 
 ### Configuration
+
+**For the repository (committed for team use):**
+
+PR Agent includes `.mcp.json` (Claude Code/Cursor) and `.vscode/mcp.json` (VS Code) that work after running `npm install --legacy-peer-deps && npm run build`.
+
+**For published npm package (global install):**
 
 Add to your tool's MCP configuration:
 
@@ -416,35 +428,62 @@ Add to your tool's MCP configuration:
 }
 ```
 
-From source:
+From source (for local development):
 ```json
 {
   "mcpServers": {
     "pr-agent": {
       "command": "node",
-      "args": ["dist/mcp/server.js"]
+      "args": ["/absolute/path/to/pr-agent/dist/mcp/server.js"]
     }
   }
 }
 ```
 
+> **Local Development**: For colleagues working on this repository, see [MCP-LOCAL-SETUP.md](MCP-LOCAL-SETUP.md) for detailed setup instructions and the `npm run mcp:setup` helper script.
+
 ### Available Tools
 
-| Tool | Description |
-|------|-------------|
-| `analyze` | Main entry point - mirrors `pr-agent analyze` exactly |
-| `dashboard` | Start web dashboard - mirrors `pr-agent dashboard` |
+The MCP server provides two tools (defined in `server.json`):
 
-### Usage Examples
+#### 1. `analyze` - PR/Branch Analysis
 
-Simply ask your AI assistant:
+Mirrors `pr-agent analyze` CLI command exactly.
 
+**What it does:**
+- Parses git diff
+- Detects security risks (hardcoded secrets, SQL injection, XSS, etc.)
+- Calculates complexity scores (1-5 scale)
+- Extracts Jira ticket references from PR title/branch/commits
+- Includes architecture documentation context (if `.arch-docs` exists)
+- Saves analysis to database
+
+**Parameters:**
+- `branch` (optional): Base branch to compare against
+- `staged` (optional): Analyze staged changes instead
+- `title` (optional): PR title for ticket extraction
+- `cwd` (optional): Working directory
+- `peerReview` (optional): Enable Jira ticket validation
+- `archDocs` (optional): Include architecture docs
+
+**Usage:** Ask your AI assistant:
 ```
 Analyze my current branch changes
+Analyze staged changes
+Analyze changes against origin/develop
 ```
 
+#### 2. `dashboard` - Web Dashboard
+
+Starts the analysis history web dashboard on localhost.
+
+**Parameters:**
+- `port` (optional): Port to run on (default: 3000)
+
+**Usage:** Ask your AI assistant:
 ```
 Start the PR Agent dashboard
+Start the dashboard on port 3001
 ```
 
 ### How It Works

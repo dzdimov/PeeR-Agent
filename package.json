@@ -50,6 +50,7 @@
     "start": "probot run ./dist/index.js",
     "cli": "node dist/cli/index.js",
     "mcp": "node dist/mcp/server.js",
+    "mcp:setup": "node scripts/setup-mcp-local.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"

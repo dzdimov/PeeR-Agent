@@ -27,13 +27,19 @@ export declare function readCoverageReport(repoPath?: string): CoverageReport;
 export declare function createCoverageReporterTool(): DynamicStructuredTool<z.ZodObject<{
     repoPath: z.ZodOptional<z.ZodString>;
     forceRead: z.ZodOptional<z.ZodBoolean>;
-}, z.core.$strip>, {
+}, "strip", z.ZodTypeAny, {
+    repoPath?: string | undefined;
+    forceRead?: boolean | undefined;
+}, {
+    repoPath?: string | undefined;
+    forceRead?: boolean | undefined;
+}>, {
     repoPath?: string;
     forceRead?: boolean;
 }, {
     repoPath?: string | undefined;
     forceRead?: boolean | undefined;
-}, string>;
+}, string, "report_coverage">;
 /**
  * Format coverage report for display
  */

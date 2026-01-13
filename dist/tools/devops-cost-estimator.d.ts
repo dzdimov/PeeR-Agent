@@ -32,13 +32,47 @@ export declare function createDevOpsCostEstimatorTool(): DynamicStructuredTool<z
     files: z.ZodArray<z.ZodObject<{
         path: z.ZodString;
         diff: z.ZodString;
-    }, z.core.$strip>>;
+    }, "strip", z.ZodTypeAny, {
+        path: string;
+        diff: string;
+    }, {
+        path: string;
+        diff: string;
+    }>, "many">;
     awsCredentials: z.ZodOptional<z.ZodObject<{
         accessKeyId: z.ZodOptional<z.ZodString>;
         secretAccessKey: z.ZodOptional<z.ZodString>;
         region: z.ZodOptional<z.ZodString>;
-    }, z.core.$strip>>;
-}, z.core.$strip>, {
+    }, "strip", z.ZodTypeAny, {
+        accessKeyId?: string | undefined;
+        secretAccessKey?: string | undefined;
+        region?: string | undefined;
+    }, {
+        accessKeyId?: string | undefined;
+        secretAccessKey?: string | undefined;
+        region?: string | undefined;
+    }>>;
+}, "strip", z.ZodTypeAny, {
+    files: {
+        path: string;
+        diff: string;
+    }[];
+    awsCredentials?: {
+        accessKeyId?: string | undefined;
+        secretAccessKey?: string | undefined;
+        region?: string | undefined;
+    } | undefined;
+}, {
+    files: {
+        path: string;
+        diff: string;
+    }[];
+    awsCredentials?: {
+        accessKeyId?: string | undefined;
+        secretAccessKey?: string | undefined;
+        region?: string | undefined;
+    } | undefined;
+}>, {
     files: Array<{
         path: string;
         diff: string;
@@ -58,7 +92,7 @@ export declare function createDevOpsCostEstimatorTool(): DynamicStructuredTool<z
         secretAccessKey?: string | undefined;
         region?: string | undefined;
     } | undefined;
-}, string>;
+}, string, "estimate_devops_costs">;
 /**
  * Format cost estimates for display
  */

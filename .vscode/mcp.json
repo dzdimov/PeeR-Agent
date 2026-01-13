@@ -1,0 +1,17 @@
+{
+  "$comment": "MCP Server Configuration for PR Agent (CLI Tool + MCP Server)",
+  "$comment2": "PR Agent is primarily a CLI tool for PR analysis that also exposes MCP server functionality",
+  "$comment3": "The MCP server (src/mcp/) imports and reuses the CLI's core analysis engine",
+  "$comment4": "After 'npm install && npm run build', the server provides these tools:",
+  "$comment5": "  - analyze: Parse git diff, detect risks, calculate complexity, extract Jira tickets",
+  "$comment6": "  - dashboard: Start web dashboard for viewing analysis history and metrics",
+  "servers": {
+    "pr-agent": {
+      "type": "stdio",
+      "command": "npm",
+      "args": ["run", "mcp"],
+      "cwd": "${workspaceFolder}",
+      "description": "PR Agent MCP Server - AI-powered PR analysis (analyze, dashboard)"
+    }
+  }
+}
