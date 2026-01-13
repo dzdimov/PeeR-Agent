@@ -13,9 +13,9 @@
   "$comment11": "The MCP server imports and reuses the CLI's PRAnalyzerAgent and analysis tools.",
   "$comment12": "",
   "$comment13": "===== Required MCP Servers for Full Functionality =====",
-  "$comment14": "For Jira integration: Install @modelcontextprotocol/server-atlassian",
-  "$comment15": "For GitHub integration: Install @modelcontextprotocol/server-github",
-  "$comment16": "The PR Agent extracts Jira ticket IDs, then Claude Code uses the Atlassian MCP server to fetch ticket details.",
+  "$comment14": "The Atlassian Rovo MCP Server provides Jira/Confluence access via OAuth (requires Node.js 18+)",
+  "$comment15": "GitHub MCP server enables repository and PR management",
+  "$comment16": "The PR Agent extracts Jira ticket IDs, then uses the Atlassian MCP server to fetch ticket details.",
   "mcpServers": {
     "pr-agent": {
       "command": "npm",
@@ -26,11 +26,11 @@
     },
     "atlassian": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-atlassian"]
+      "args": ["-y", "mcp-remote", "https://mcp.atlassian.com/v1/mcp"]
     },
     "github": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"]
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-github"]
     }
   }
 }

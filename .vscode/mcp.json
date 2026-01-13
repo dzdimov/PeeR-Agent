@@ -17,15 +17,14 @@
       "description": "PR Agent MCP Server - AI-powered PR analysis (analyze, dashboard)"
     },
     "atlassian": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-atlassian"],
-      "description": "Atlassian MCP Server - Jira ticket details and validation"
+      "type": "http",
+      "url": "https://mcp.atlassian.com/v1/mcp",
+      "description": "Official Atlassian Rovo MCP Server - Jira and Confluence Cloud access via OAuth"
     },
     "github": {
       "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-github"],
       "description": "GitHub MCP Server - Repository and PR management"
     }
   }

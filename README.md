@@ -504,12 +504,45 @@ The calling tool's LLM then adds AI-powered insights to the analysis.
 
 For full functionality, install these official MCP servers alongside PR Agent:
 
-#### Atlassian MCP Server (Jira Integration)
-The PR Agent extracts Jira ticket IDs (e.g., `PROJ-123`), then Claude Code uses the Atlassian MCP server to fetch ticket details and validate against requirements.
+#### Atlassian Rovo MCP Server (Jira Integration) - REQUIRED
 
-**Installation**: Already configured in `.mcp.json` and `.vscode/mcp.json`. Claude Code will prompt to enable on first use.
+The PR Agent extracts Jira ticket IDs (e.g., `PROJ-123`), then Claude Code uses the official Atlassian Rovo MCP server to fetch ticket details and validate against requirements.
 
-**Setup**: Requires Jira credentials. See [Atlassian MCP docs](https://github.com/modelcontextprotocol/servers/tree/main/src/atlassian).
+**⚠️ Required Setup for Team Members (~ 1 hour initial setup)**
+
+This is a **mandatory** integration for the PR Agent to work correctly with peer review features.
+
+**Setup Instructions:**
+
+1. **The MCP configuration is already committed** in `.mcp.json` and `.vscode/mcp.json` - no setup needed!
+
+2. **Restart Claude Code** to load the MCP configuration
+
+3. **Authenticate with Atlassian** (OAuth - no API tokens needed!):
+   - When you first use Claude Code after setup, it will detect the Atlassian MCP server
+   - Claude Code will open a browser window for you to log in with your Atlassian account
+   - Grant permissions to access Jira and Confluence
+   - The authentication is saved and will persist across sessions
+
+4. **Verify the connection**:
+   - Go to https://id.atlassian.com/manage-profile/apps
+   - You should see "Atlassian MCP" listed under "Apps with access to your accounts"
+
+**How It Works:**
+- Uses official Atlassian Rovo MCP Server (cloud-hosted by Atlassian)
+- OAuth 2.1 authentication (secure, no API tokens to manage)
+- Server endpoint: `https://mcp.atlassian.com/v1/sse`
+- Respects your existing Jira/Confluence permissions
+- Works with any Atlassian Cloud site (e.g., `your-company.atlassian.net`)
+
+**Troubleshooting:**
+- **"Failed to reconnect to atlassian"**: Restart Claude Code and it will prompt for re-authentication
+- **Connection issues**: Check your Atlassian Connected Apps at https://id.atlassian.com/manage-profile/apps
+- **Permissions errors**: Make sure you have access to the Jira project in your Atlassian Cloud site
+
+**Documentation:**
+- [Official Atlassian Rovo MCP Server docs](https://support.atlassian.com/atlassian-rovo-mcp-server/)
+- [Atlassian Blog: Remote MCP Server](https://www.atlassian.com/blog/announcements/remote-mcp-server)
 
 #### GitHub MCP Server (Repository Management)
 Provides GitHub API access for repository operations and PR management.
