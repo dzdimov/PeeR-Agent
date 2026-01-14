@@ -327,12 +327,12 @@ declare const PeerReviewAnalysisSchema: z.ZodObject<{
         recommendation: z.ZodEnum<["approve", "request_changes", "needs_discussion"]>;
         confidenceLevel: z.ZodNumber;
     }, "strip", z.ZodTypeAny, {
-        recommendation: "approve" | "request_changes" | "needs_discussion";
         summary: string;
+        recommendation: "approve" | "request_changes" | "needs_discussion";
         confidenceLevel: number;
     }, {
-        recommendation: "approve" | "request_changes" | "needs_discussion";
         summary: string;
+        recommendation: "approve" | "request_changes" | "needs_discussion";
         confidenceLevel: number;
     }>;
 }, "strip", z.ZodTypeAny, {
@@ -368,8 +368,8 @@ declare const PeerReviewAnalysisSchema: z.ZodObject<{
         relatedCriteria?: string | undefined;
     }[];
     verdict: {
-        recommendation: "approve" | "request_changes" | "needs_discussion";
         summary: string;
+        recommendation: "approve" | "request_changes" | "needs_discussion";
         confidenceLevel: number;
     };
 }, {
@@ -405,8 +405,8 @@ declare const PeerReviewAnalysisSchema: z.ZodObject<{
         relatedCriteria?: string | undefined;
     }[];
     verdict: {
-        recommendation: "approve" | "request_changes" | "needs_discussion";
         summary: string;
+        recommendation: "approve" | "request_changes" | "needs_discussion";
         confidenceLevel: number;
     };
 }>;
