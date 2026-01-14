@@ -186,6 +186,11 @@ export function saveAnalysis(record: Omit<AnalysisRecord, 'id' | 'timestamp'> & 
     created_tests_count: record.created_tests_count || 0,
     estimated_cost: record.estimated_cost || 0,
     coverage_percentage: record.coverage_percentage || null,
+    // DevOps fields (v0.2.0)
+    devops_cost_monthly: record.devops_cost_monthly || null,
+    devops_resources: record.devops_resources || null,
+    has_test_suggestions: record.has_test_suggestions || null,
+    test_suggestions_count: record.test_suggestions_count || null,
     // Peer review fields (v0.3.0)
     peer_review_enabled: record.peer_review_enabled || null,
     ticket_key: record.ticket_key || null,
