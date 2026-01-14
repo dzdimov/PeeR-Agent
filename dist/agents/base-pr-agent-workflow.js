@@ -151,7 +151,7 @@ export class BasePRAgentWorkflow {
      */
     async execute(context, options) {
         if (this.mode === ExecutionMode.PROMPT_ONLY) {
-            return this.buildAllPrompts(context);
+            return await this.buildAllPrompts(context);
         }
         else {
             return this.executeAnalysis(context, options);
@@ -159,8 +159,9 @@ export class BasePRAgentWorkflow {
     }
     /**
      * Build all prompts for PROMPT_ONLY mode (without executing them)
+     * Also runs static analysis tools that don't require an LLM
      */
-    buildAllPrompts(context) {
+    async buildAllPrompts(context) {
         const files = parseDiff(context.diff);
         const prompts = [];
         // Build arch-docs context if available
@@ -168,6 +169,11 @@ export class BasePRAgentWorkflow {
         if (context.archDocs?.available) {
             archDocsContext = formatArchDocsForPrompt(context.archDocs);
         }
+        // === RUN STATIC ANALYSIS (no LLM needed) ===
+        // These features run immediately and results are included in the output
+        console.log('🔧 Running static analysis tools...');
+        const staticAnalysis = await this.detectAndAnalyzeChangeTypes(files, context);
+        console.log(`✅ Static analysis complete`);
         // 1. File Analysis Prompts (for important files)
         const filesToAnalyze = files.slice(0, 15);
         const importantFiles = filesToAnalyze.filter(f => f.additions + f.deletions > 20 ||
@@ -189,13 +195,17 @@ export class BasePRAgentWorkflow {
             mode: 'prompt_only',
             context,
             prompts,
+            // Include static analysis results
+            staticAnalysis,
             instructions: `Execute these prompts sequentially using your LLM:
 1. First, analyze the important files in the PR
 2. Then detect risks and security issues
 3. Generate an overall PR summary
 4. (Optional) Refine the analysis based on results
 
-Each prompt includes the necessary context and instructions for execution.`
+Each prompt includes the necessary context and instructions for execution.
+
+Note: Static analysis (test suggestions, DevOps costs, coverage reports) has already been run and is included below.`
         };
     }
     /**

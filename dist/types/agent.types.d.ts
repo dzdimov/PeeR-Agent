@@ -65,12 +65,19 @@ export interface AnalysisPrompt {
 }
 /**
  * Result when in PROMPT_ONLY mode - returns prompts instead of executing them
+ * Also includes static analysis results that don't require an LLM
  */
 export interface PromptOnlyResult {
     mode: 'prompt_only';
     context: AgentContext;
     prompts: AnalysisPrompt[];
     instructions: string;
+    staticAnalysis?: {
+        testSuggestions?: TestSuggestion[];
+        devOpsCostEstimates?: DevOpsCostEstimate[];
+        coverageReport?: CoverageReport;
+        projectClassification?: string;
+    };
 }
 export interface RiskItem {
     description: string;

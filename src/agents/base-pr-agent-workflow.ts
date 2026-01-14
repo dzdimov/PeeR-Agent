@@ -225,7 +225,7 @@ export abstract class BasePRAgentWorkflow {
    */
   async execute(context: AgentContext, options?: AgentExecutionOptions): Promise<AgentResultOrPrompts> {
     if (this.mode === ExecutionMode.PROMPT_ONLY) {
-      return this.buildAllPrompts(context);
+      return await this.buildAllPrompts(context);
     } else {
       return this.executeAnalysis(context, options);
     }
@@ -233,8 +233,9 @@ export abstract class BasePRAgentWorkflow {
 
   /**
    * Build all prompts for PROMPT_ONLY mode (without executing them)
+   * Also runs static analysis tools that don't require an LLM
    */
-  private buildAllPrompts(context: AgentContext): PromptOnlyResult {
+  private async buildAllPrompts(context: AgentContext): Promise<PromptOnlyResult> {
     const files = parseDiff(context.diff);
     const prompts: AnalysisPrompt[] = [];
 
@@ -243,6 +244,12 @@ export abstract class BasePRAgentWorkflow {
     if (context.archDocs?.available) {
       archDocsContext = formatArchDocsForPrompt(context.archDocs);
     }
+
+    // === RUN STATIC ANALYSIS (no LLM needed) ===
+    // These features run immediately and results are included in the output
+    console.log('🔧 Running static analysis tools...');
+    const staticAnalysis = await this.detectAndAnalyzeChangeTypes(files, context);
+    console.log(`✅ Static analysis complete`);
 
     // 1. File Analysis Prompts (for important files)
     const filesToAnalyze = files.slice(0, 15);
@@ -272,13 +279,17 @@ export abstract class BasePRAgentWorkflow {
       mode: 'prompt_only',
       context,
       prompts,
+      // Include static analysis results
+      staticAnalysis,
       instructions: `Execute these prompts sequentially using your LLM:
 1. First, analyze the important files in the PR
 2. Then detect risks and security issues
 3. Generate an overall PR summary
 4. (Optional) Refine the analysis based on results
 
-Each prompt includes the necessary context and instructions for execution.`
+Each prompt includes the necessary context and instructions for execution.
+
+Note: Static analysis (test suggestions, DevOps costs, coverage reports) has already been run and is included below.`
     };
   }
 

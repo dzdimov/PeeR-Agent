@@ -659,6 +659,71 @@ Returns formatted analysis for the calling LLM to display and enhance with AI in
       // Format all prompts for output
       const allPrompts = [...analysisResult.prompts, ...peerReviewPrompts];
       let outputText = '🤖 **PR Agent Analysis - LLM-Agnostic Mode**\n\n';
+
+      // === STATIC ANALYSIS RESULTS (non-LLM) ===
+      if (analysisResult.staticAnalysis) {
+        const sa = analysisResult.staticAnalysis;
+        outputText += '## 📊 Static Analysis Results\n\n';
+        outputText += 'These results were generated immediately without an LLM:\n\n';
+
+        // Project Classification
+        if (sa.projectClassification) {
+          outputText += sa.projectClassification + '\n\n';
+        }
+
+        // Test Suggestions
+        if (sa.testSuggestions && sa.testSuggestions.length > 0) {
+          outputText += `### 🧪 Test Suggestions (${sa.testSuggestions.length})\n\n`;
+          sa.testSuggestions.forEach((test, i) => {
+            outputText += `**${i + 1}. ${test.forFile}**\n`;
+            outputText += `- Framework: ${test.testFramework}\n`;
+            outputText += `- Suggested path: ${test.testFilePath || 'N/A'}\n`;
+            outputText += `- Description: ${test.description}\n\n`;
+            outputText += '```' + test.testFramework + '\n';
+            outputText += test.testCode.substring(0, 800);
+            if (test.testCode.length > 800) outputText += '\n// ... (truncated)';
+            outputText += '\n```\n\n';
+          });
+        }
+
+        // DevOps Cost Estimates
+        if (sa.devOpsCostEstimates && sa.devOpsCostEstimates.length > 0) {
+          const totalCost = sa.devOpsCostEstimates.reduce((sum, e) => sum + e.estimatedNewCost, 0);
+          outputText += `### 💰 DevOps Cost Estimates (~$${totalCost.toFixed(2)}/month)\n\n`;
+          sa.devOpsCostEstimates.forEach((cost, i) => {
+            outputText += `**${i + 1}. ${cost.resource}** (${cost.resourceType})\n`;
+            outputText += `- Estimated cost: $${cost.estimatedNewCost.toFixed(2)}/month\n`;
+            if (cost.difference) {
+              const sign = cost.difference > 0 ? '+' : '';
+              outputText += `- Change: ${sign}$${cost.difference.toFixed(2)}/month\n`;
+            }
+            outputText += `- Confidence: ${cost.confidence}\n`;
+            if (cost.details) outputText += `- Details: ${cost.details}\n`;
+            outputText += '\n';
+          });
+        }
+
+        // Coverage Report
+        if (sa.coverageReport && sa.coverageReport.available) {
+          outputText += `### 📈 Test Coverage Report\n\n`;
+          outputText += `- Overall: ${sa.coverageReport.overallPercentage?.toFixed(1) || 'N/A'}%\n`;
+          if (sa.coverageReport.lineCoverage !== undefined) {
+            outputText += `- Line coverage: ${sa.coverageReport.lineCoverage.toFixed(1)}%\n`;
+          }
+          if (sa.coverageReport.branchCoverage !== undefined) {
+            outputText += `- Branch coverage: ${sa.coverageReport.branchCoverage.toFixed(1)}%\n`;
+          }
+          if (sa.coverageReport.delta !== undefined) {
+            const sign = sa.coverageReport.delta > 0 ? '+' : '';
+            outputText += `- Change from baseline: ${sign}${sa.coverageReport.delta.toFixed(1)}%\n`;
+          }
+          outputText += `- Tool: ${sa.coverageReport.coverageTool || 'Unknown'}\n\n`;
+        }
+
+        outputText += '---\n\n';
+      }
+
+      outputText += '## 🤖 LLM Analysis Prompts\n\n';
       outputText += 'The following prompts should be executed sequentially using your LLM:\n\n';
       outputText += '---\n\n';
 
@@ -676,8 +741,8 @@ Returns formatted analysis for the calling LLM to display and enhance with AI in
         outputText += `## ${stepTitle}\n\n`;
         outputText += `**Instructions:** ${prompt.instructions}\n\n`;
         outputText += '**Prompt:**\n```\n';
-        outputText += prompt.prompt.substring(0, 5000); // Limit prompt size
-        if (prompt.prompt.length > 5000) {
+        outputText += prompt.prompt.substring(0, 50000); // Limit prompt size
+        if (prompt.prompt.length > 50000) {
           outputText += '\n... (truncated for display)\n';
         }
         outputText += '\n```\n\n';

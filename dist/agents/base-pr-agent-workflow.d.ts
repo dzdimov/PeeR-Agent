@@ -54,6 +54,7 @@ export declare abstract class BasePRAgentWorkflow {
     execute(context: AgentContext, options?: AgentExecutionOptions): Promise<AgentResultOrPrompts>;
     /**
      * Build all prompts for PROMPT_ONLY mode (without executing them)
+     * Also runs static analysis tools that don't require an LLM
      */
     private buildAllPrompts;
     /**
