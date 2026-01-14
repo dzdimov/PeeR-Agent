@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { PRAnalyzerAgent } from './agents/pr-analyzer-agent.js';
 import { saveAnalysis, getDashboardStats, getRecentAnalyses } from './db/index.js';
+import { ExecutionMode, type AgentResult } from './types/agent.types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -179,11 +180,18 @@ export default (app: Probot, { getRouter }: { getRouter?: (path?: string) => Rou
       // Use LangChain agent for intelligent analysis
       app.log.info(`Running LangChain agent analysis with ${provider}...`);
       const agent = new PRAnalyzerAgent({
+        mode: ExecutionMode.EXECUTE,  // Probot always executes with API key
         provider: provider as any,
         apiKey,
         model,
       });
-      const result = await agent.analyze(diff, pr.title);
+      const analysisResult = await agent.analyze(diff, pr.title);
+
+      // Type guard: Probot always uses EXECUTE mode
+      if (analysisResult.mode === 'prompt_only') {
+        throw new Error('Unexpected prompt-only result in Probot EXECUTE mode');
+      }
+      const result = analysisResult as AgentResult;
 
       // Save to Database
       try {

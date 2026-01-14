@@ -43,6 +43,42 @@ export interface AnalysisMode {
     risks: boolean;
     complexity: boolean;
 }
+/**
+ * Execution mode for LLM-agnostic operation
+ */
+export declare enum ExecutionMode {
+    EXECUTE = "execute",// CLI: Execute prompts with API key
+    PROMPT_ONLY = "prompt_only"
+}
+/**
+ * Individual analysis prompt for PROMPT_ONLY mode
+ * Supports both main PR analysis and peer review prompts
+ */
+export interface AnalysisPrompt {
+    step: 'fileAnalysis' | 'riskDetection' | 'summaryGeneration' | 'selfRefinement' | 'ticketQuality' | 'acValidation' | 'peerReview';
+    prompt: string;
+    context?: Record<string, any>;
+    instructions: string;
+    schema?: any;
+    formatInstructions?: string;
+    inputs?: Record<string, unknown>;
+}
+/**
+ * Result when in PROMPT_ONLY mode - returns prompts instead of executing them
+ * Also includes static analysis results that don't require an LLM
+ */
+export interface PromptOnlyResult {
+    mode: 'prompt_only';
+    context: AgentContext;
+    prompts: AnalysisPrompt[];
+    instructions: string;
+    staticAnalysis?: {
+        testSuggestions?: TestSuggestion[];
+        devOpsCostEstimates?: DevOpsCostEstimate[];
+        coverageReport?: CoverageReport;
+        projectClassification?: string;
+    };
+}
 export interface RiskItem {
     description: string;
     archDocsReference?: {
@@ -153,6 +189,10 @@ export interface AgentResult {
     devOpsCostEstimates?: DevOpsCostEstimate[];
     coverageReport?: CoverageReport;
 }
+/**
+ * Union type for agent results - either executed results or prompts to execute
+ */
+export type AgentResultOrPrompts = AgentResult | PromptOnlyResult;
 export type AgentAnalysisResult = AgentResult;
 export interface AgentMetadata {
     name: string;

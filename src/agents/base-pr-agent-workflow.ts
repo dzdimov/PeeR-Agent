@@ -6,7 +6,20 @@
 import { StateGraph, Annotation, END } from '@langchain/langgraph';
 import { MemorySaver } from '@langchain/langgraph';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import { AgentContext, AgentResult, FileAnalysis, AgentExecutionOptions, TestSuggestion, DevOpsCostEstimate, CoverageReport } from '../types/agent.types.js';
+import {
+  AgentContext,
+  AgentResult,
+  AgentResultOrPrompts,
+  FileAnalysis,
+  AgentExecutionOptions,
+  TestSuggestion,
+  DevOpsCostEstimate,
+  CoverageReport,
+  ExecutionMode,
+  AnalysisPrompt,
+  PromptOnlyResult,
+  DiffFile,
+} from '../types/agent.types.js';
 import {
   parseDiff,
   createFileAnalyzerTool,
@@ -137,13 +150,20 @@ export interface PRAgentWorkflowConfig {
  * Base class for PR agents with self-refinement workflow
  */
 export abstract class BasePRAgentWorkflow {
-  protected model: BaseChatModel;
-  protected workflow: ReturnType<typeof this.buildWorkflow>;
+  protected model?: BaseChatModel;  // Now optional!
+  protected mode: ExecutionMode;
+  protected workflow?: ReturnType<typeof this.buildWorkflow>;  // Optional in PROMPT_ONLY mode
   protected checkpointer = new MemorySaver();
   protected tools: any[];
 
-  constructor(model: BaseChatModel) {
+  constructor(mode: ExecutionMode = ExecutionMode.EXECUTE, model?: BaseChatModel) {
+    this.mode = mode;
     this.model = model;
+
+    // Validation: LLM required in EXECUTE mode
+    if (mode === ExecutionMode.EXECUTE && !model) {
+      throw new Error('BasePRAgentWorkflow: LLM is required when mode is EXECUTE');
+    }
 
     // Initialize tools
     this.tools = [
@@ -153,7 +173,10 @@ export abstract class BasePRAgentWorkflow {
       createSummaryGeneratorTool(),
     ];
 
-    this.workflow = this.buildWorkflow();
+    // Only build workflow in EXECUTE mode
+    if (mode === ExecutionMode.EXECUTE) {
+      this.workflow = this.buildWorkflow();
+    }
   }
 
   /**
@@ -198,8 +221,210 @@ export abstract class BasePRAgentWorkflow {
 
   /**
    * Execute the agent workflow
+   * Routes to either EXECUTE mode (run analysis) or PROMPT_ONLY mode (return prompts)
    */
-  async execute(context: AgentContext, options?: AgentExecutionOptions): Promise<AgentResult> {
+  async execute(context: AgentContext, options?: AgentExecutionOptions): Promise<AgentResultOrPrompts> {
+    if (this.mode === ExecutionMode.PROMPT_ONLY) {
+      return await this.buildAllPrompts(context);
+    } else {
+      return this.executeAnalysis(context, options);
+    }
+  }
+
+  /**
+   * Build all prompts for PROMPT_ONLY mode (without executing them)
+   * Also runs static analysis tools that don't require an LLM
+   */
+  private async buildAllPrompts(context: AgentContext): Promise<PromptOnlyResult> {
+    const files = parseDiff(context.diff);
+    const prompts: AnalysisPrompt[] = [];
+
+    // Build arch-docs context if available
+    let archDocsContext = '';
+    if (context.archDocs?.available) {
+      archDocsContext = formatArchDocsForPrompt(context.archDocs);
+    }
+
+    // === RUN STATIC ANALYSIS (no LLM needed) ===
+    // These features run immediately and results are included in the output
+    console.log('🔧 Running static analysis tools...');
+    const staticAnalysis = await this.detectAndAnalyzeChangeTypes(files, context);
+    console.log(`✅ Static analysis complete`);
+
+    // 1. File Analysis Prompts (for important files)
+    const filesToAnalyze = files.slice(0, 15);
+    const importantFiles = filesToAnalyze.filter(f =>
+      f.additions + f.deletions > 20 ||
+      f.path.includes('config') ||
+      f.path.includes('schema') ||
+      f.path.includes('migration') ||
+      f.path.includes('test')
+    ).slice(0, 5);
+
+    if (importantFiles.length > 0) {
+      prompts.push(this.buildFileAnalysisPrompt(importantFiles, archDocsContext));
+    }
+
+    // 2. Risk Detection Prompt
+    prompts.push(this.buildRiskDetectionPrompt(files, archDocsContext, context));
+
+    // 3. Summary Generation Prompt
+    prompts.push(this.buildSummaryPrompt(files, archDocsContext, context));
+
+    // 4. Self Refinement Prompt (placeholder - would need analysis results)
+    // Note: This would typically need results from previous steps
+    // For now, we'll skip it in PROMPT_ONLY mode or make it conditional
+
+    return {
+      mode: 'prompt_only',
+      context,
+      prompts,
+      // Include static analysis results
+      staticAnalysis,
+      instructions: `Execute these prompts sequentially using your LLM:
+1. First, analyze the important files in the PR
+2. Then detect risks and security issues
+3. Generate an overall PR summary
+4. (Optional) Refine the analysis based on results
+
+Each prompt includes the necessary context and instructions for execution.
+
+Note: Static analysis (test suggestions, DevOps costs, coverage reports) has already been run and is included below.`
+    };
+  }
+
+  /**
+   * Build file analysis prompt
+   */
+  private buildFileAnalysisPrompt(importantFiles: DiffFile[], archDocsContext: string): AnalysisPrompt {
+    const prompt = `Analyze these files from a pull request. For EACH file, provide a detailed analysis considering the repository's architecture standards.
+${archDocsContext ? '\n' + archDocsContext : ''}
+
+Files to analyze:
+${importantFiles.map(f => `
+File: ${f.path}
+Status: ${f.status || 'modified'}
+Changes: +${f.additions} -${f.deletions}
+Diff preview:
+\`\`\`
+${f.diff.substring(0, 500)}
+\`\`\`
+`).join('\n---\n')}
+
+${archDocsContext ? `CRITICAL INSTRUCTIONS:
+- For EACH file, reference the relevant architecture documentation sections above
+- Explain how the changes align with or diverge from established patterns
+- Identify specific guidelines that apply to each file
+- Mention which parts of the architecture are affected
+- Compare changes against documented standards
+
+` : ''}
+
+Respond with a JSON object mapping file paths to analysis objects:
+{
+  "path/to/file": {
+    "summary": "Description that references relevant arch-docs patterns/guidelines",
+    "risks": ["risk with arch-docs context", "risk2"],
+    "complexity": 1-5,
+    "recommendations": ["recommendation based on arch-docs standards"]
+  }
+}
+
+${archDocsContext ? 'Each summary MUST reference the specific architecture documentation that applies to this file.' : ''}`;
+
+    return {
+      step: 'fileAnalysis',
+      prompt,
+      context: { fileCount: importantFiles.length },
+      instructions: 'Analyze each file and return JSON object with file analyses'
+    };
+  }
+
+  /**
+   * Build risk detection prompt
+   */
+  private buildRiskDetectionPrompt(files: DiffFile[], archDocsContext: string, context: AgentContext): AnalysisPrompt {
+    const prompt = `Review this pull request for potential risks, security issues, and code quality problems.
+
+${archDocsContext ? archDocsContext : ''}
+
+Files changed (${files.length} total):
+${files.map(f => `- ${f.path} (+${f.additions}/-${f.deletions})`).join('\n')}
+
+Full diff:
+\`\`\`diff
+${context.diff.substring(0, 8000)}
+\`\`\`
+
+${archDocsContext ? `You have access to architecture documentation. Reference relevant security guidelines when identifying risks.
+
+Return a JSON array of risk objects with archDocsSource and archDocsExcerpt:
+[
+  {
+    "file": "path/to/file",
+    "line": 42,
+    "comment": "Description of risk",
+    "severity": "critical|warning|suggestion",
+    "archDocsSource": "security.md",
+    "archDocsExcerpt": "Relevant excerpt from arch-docs",
+    "reason": "Why this is a risk based on arch-docs"
+  }
+]
+
+DO NOT return simple string arrays. Each risk MUST be an object with archDocsSource, archDocsExcerpt, and reason fields.` : '["risk 1", "risk 2", ...]'}
+
+Only include risks that are actually present. If no significant risks, return an empty array [].`;
+
+    return {
+      step: 'riskDetection',
+      prompt,
+      context: { fileCount: files.length },
+      instructions: 'Detect risks and return JSON array of risk objects'
+    };
+  }
+
+  /**
+   * Build summary generation prompt
+   */
+  private buildSummaryPrompt(files: DiffFile[], archDocsContext: string, context: AgentContext): AnalysisPrompt {
+    const prompt = `Generate a comprehensive summary of this pull request.
+
+${archDocsContext ? archDocsContext : ''}
+
+PR Title: ${context.title || 'Untitled PR'}
+
+Files changed: ${files.length}
+Total additions: +${files.reduce((sum, f) => sum + f.additions, 0)}
+Total deletions: -${files.reduce((sum, f) => sum + f.deletions, 0)}
+
+Key files:
+${files.slice(0, 10).map(f => `- ${f.path} (+${f.additions}/-${f.deletions})`).join('\n')}
+
+Diff excerpt:
+\`\`\`diff
+${context.diff.substring(0, 5000)}
+\`\`\`
+
+${archDocsContext ? 'Consider the design patterns and architecture from the repository documentation when analyzing the changes.\n' : ''}
+
+Provide a detailed, well-structured summary (3-5 paragraphs) that would help a reviewer understand the scope and purpose of this PR.`;
+
+    return {
+      step: 'summaryGeneration',
+      prompt,
+      context: {},
+      instructions: 'Generate detailed PR summary (3-5 paragraphs)'
+    };
+  }
+
+  /**
+   * Execute the agent workflow in EXECUTE mode (with LLM)
+   */
+  private async executeAnalysis(context: AgentContext, options?: AgentExecutionOptions): Promise<AgentResult> {
+    if (!this.workflow) {
+      throw new Error('Workflow not initialized - executeAnalysis should only be called in EXECUTE mode');
+    }
+
     const startTime = Date.now();
 
     // Fast path: skip self-refinement
@@ -566,6 +791,10 @@ export abstract class BasePRAgentWorkflow {
     if (importantFiles.length > 0) {
       try {
 
+        if (!this.model) {
+          throw new Error('LLM is required for file analysis in EXECUTE mode');
+        }
+
         const fileDetailsPrompt = `Analyze these files from a pull request. For EACH file, provide a detailed analysis considering the repository's architecture standards.
 ${archDocsContext ? '\n' + archDocsContext : ''}
 
@@ -782,6 +1011,10 @@ DO NOT return simple string arrays. Each risk MUST be an object with archDocsSou
 Only include risks that are actually present. If no significant risks, return an empty array [].`;
 
     try {
+      if (!this.model) {
+        throw new Error('LLM is required for risk detection in EXECUTE mode');
+      }
+
       const response = await this.model.invoke(riskPrompt);
       const content = response.content as string;
 
@@ -1016,6 +1249,10 @@ ${patternsContext ? 'Consider the design patterns and architecture from the repo
 Provide a detailed, well-structured summary (3-5 paragraphs) that would help a reviewer understand the scope and purpose of this PR.`;
 
     try {
+      if (!this.model) {
+        throw new Error('LLM is required for summary generation in EXECUTE mode');
+      }
+
       const response = await this.model.invoke(summaryPrompt);
       const detailedSummary = response.content as string;
 
@@ -1130,6 +1367,10 @@ Provide a JSON array of 3-5 specific, actionable recommendations:
 ["recommendation 1", "recommendation 2", ...]`;
 
     try {
+      if (!this.model) {
+        throw new Error('LLM is required for self refinement in EXECUTE mode');
+      }
+
       const response = await this.model.invoke(refinementPrompt);
       const content = response.content as string;
 

@@ -149,20 +149,6 @@ export declare const UserConfigSchema: z.ZodObject<{
         temperature?: number | undefined;
         maxTokens?: number | undefined;
     } | undefined;
-    output?: {
-        verbose?: boolean | undefined;
-        showStrategy?: boolean | undefined;
-        showRecommendations?: boolean | undefined;
-    } | undefined;
-    analysis?: {
-        language?: string | undefined;
-        framework?: string | undefined;
-        defaultMode?: "summary" | "complexity" | "risks" | "full" | undefined;
-        autoDetectAgent?: boolean | undefined;
-        enableStaticAnalysis?: boolean | undefined;
-        maxCost?: number | undefined;
-        agentThreshold?: number | undefined;
-    } | undefined;
     peerReview?: {
         provider?: string | undefined;
         email?: string | undefined;
@@ -180,6 +166,20 @@ export declare const UserConfigSchema: z.ZodObject<{
         generateTestSuggestions?: boolean | undefined;
         checkScopeCreep?: boolean | undefined;
         includeTicketDetails?: boolean | undefined;
+    } | undefined;
+    output?: {
+        verbose?: boolean | undefined;
+        showStrategy?: boolean | undefined;
+        showRecommendations?: boolean | undefined;
+    } | undefined;
+    analysis?: {
+        language?: string | undefined;
+        framework?: string | undefined;
+        defaultMode?: "summary" | "complexity" | "risks" | "full" | undefined;
+        autoDetectAgent?: boolean | undefined;
+        enableStaticAnalysis?: boolean | undefined;
+        maxCost?: number | undefined;
+        agentThreshold?: number | undefined;
     } | undefined;
     git?: {
         defaultBranch?: string | undefined;
@@ -199,20 +199,6 @@ export declare const UserConfigSchema: z.ZodObject<{
         temperature?: number | undefined;
         maxTokens?: number | undefined;
     } | undefined;
-    output?: {
-        verbose?: boolean | undefined;
-        showStrategy?: boolean | undefined;
-        showRecommendations?: boolean | undefined;
-    } | undefined;
-    analysis?: {
-        language?: string | undefined;
-        framework?: string | undefined;
-        defaultMode?: "summary" | "complexity" | "risks" | "full" | undefined;
-        autoDetectAgent?: boolean | undefined;
-        enableStaticAnalysis?: boolean | undefined;
-        maxCost?: number | undefined;
-        agentThreshold?: number | undefined;
-    } | undefined;
     peerReview?: {
         provider?: string | undefined;
         email?: string | undefined;
@@ -230,6 +216,20 @@ export declare const UserConfigSchema: z.ZodObject<{
         generateTestSuggestions?: boolean | undefined;
         checkScopeCreep?: boolean | undefined;
         includeTicketDetails?: boolean | undefined;
+    } | undefined;
+    output?: {
+        verbose?: boolean | undefined;
+        showStrategy?: boolean | undefined;
+        showRecommendations?: boolean | undefined;
+    } | undefined;
+    analysis?: {
+        language?: string | undefined;
+        framework?: string | undefined;
+        defaultMode?: "summary" | "complexity" | "risks" | "full" | undefined;
+        autoDetectAgent?: boolean | undefined;
+        enableStaticAnalysis?: boolean | undefined;
+        maxCost?: number | undefined;
+        agentThreshold?: number | undefined;
     } | undefined;
     git?: {
         defaultBranch?: string | undefined;

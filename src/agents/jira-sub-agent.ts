@@ -21,6 +21,29 @@ import { StructuredOutputParser } from '@langchain/core/output_parsers';
 import { z } from 'zod';
 import { IssueTicket } from '../types/issue-tracker.types.js';
 import { BaseLanguageModel } from '@langchain/core/language_models/base';
+import { AnalysisPrompt } from '../types/agent.types.js';
+
+// ========== Execution Modes ==========
+
+/**
+ * Peer Review Execution Mode
+ * - EXECUTE: Execute prompts with LLM (CLI mode with API key)
+ * - PROMPT_ONLY: Return prompts for calling LLM to execute (MCP mode, no API key)
+ */
+export enum PeerReviewMode {
+  EXECUTE = 'execute',
+  PROMPT_ONLY = 'prompt_only',
+}
+
+/**
+ * Result when in PROMPT_ONLY mode (MCP)
+ */
+export interface PromptOnlyResult {
+  mode: 'prompt_only';
+  context: JiraSubAgentContext;
+  prompts: AnalysisPrompt[];
+  instructions: string;
+}
 
 // ========== Output Schemas ==========
 
@@ -398,16 +421,63 @@ YOUR PEER REVIEW TASK:
 // ========== Agent Class ==========
 
 export class JiraSubAgent {
-  private llm: BaseLanguageModel;
+  private mode: PeerReviewMode;
+  private llm?: BaseLanguageModel;
 
-  constructor(llm: BaseLanguageModel) {
+  constructor(mode: PeerReviewMode = PeerReviewMode.EXECUTE, llm?: BaseLanguageModel) {
+    this.mode = mode;
     this.llm = llm;
+
+    // Validate: EXECUTE mode requires LLM
+    if (mode === PeerReviewMode.EXECUTE && !llm) {
+      throw new Error('JiraSubAgent: LLM is required when mode is EXECUTE');
+    }
   }
 
   /**
    * Analyze a ticket and PR, providing comprehensive peer review
+   * Returns either executed results (EXECUTE mode) or prompts (PROMPT_ONLY mode)
    */
-  async analyze(context: JiraSubAgentContext): Promise<JiraSubAgentResult> {
+  async analyze(context: JiraSubAgentContext): Promise<JiraSubAgentResult | PromptOnlyResult> {
+    if (this.mode === PeerReviewMode.PROMPT_ONLY) {
+      return this.buildPrompts(context);
+    } else {
+      return this.executeAnalysis(context);
+    }
+  }
+
+  /**
+   * Build prompts without executing (MCP mode)
+   */
+  private buildPrompts(context: JiraSubAgentContext): PromptOnlyResult {
+    const prompts: AnalysisPrompt[] = [];
+
+    // Step 1: Build ticket quality prompt
+    prompts.push(this.buildTicketQualityPrompt(context.ticket));
+
+    // Step 2: Build AC validation prompt (always - agent derives requirements)
+    prompts.push(this.buildACValidationPrompt(context));
+
+    // Step 3: Build peer review prompt
+    // Note: In PROMPT_ONLY mode, we don't know ticketQuality yet,
+    // so we include it as a dependency instruction
+    prompts.push(this.buildPeerReviewPrompt(context));
+
+    return {
+      mode: 'prompt_only',
+      context,
+      prompts,
+      instructions:
+        'Execute these prompts sequentially. ' +
+        'Pass the output of ticketQuality to peerReview as ticketQualityScore. ' +
+        'Parse each response according to the provided schema.'
+    };
+  }
+
+  /**
+   * Execute analysis with LLM (CLI mode)
+   */
+  private async executeAnalysis(context: JiraSubAgentContext): Promise<JiraSubAgentResult> {
     // Step 1: Rate ticket quality
     const ticketQuality = await this.rateTicketQuality(context.ticket);
 
@@ -432,9 +502,163 @@ export class JiraSubAgent {
   }
 
   /**
-   * Rate the quality of a Jira ticket
+   * Build ticket quality prompt (PROMPT_ONLY mode)
+   */
+  private buildTicketQualityPrompt(ticket: IssueTicket): AnalysisPrompt {
+    const parser = StructuredOutputParser.fromZodSchema(TicketQualitySchema);
+
+    const inputs = {
+      ticketKey: ticket.key,
+      ticketType: ticket.type,
+      ticketTitle: ticket.title,
+      ticketDescription: ticket.description || 'No description provided',
+      acceptanceCriteria: ticket.acceptanceCriteria ||
+        ticket.acceptanceCriteriaList?.join('\n') ||
+        'No acceptance criteria defined',
+      testScenarios: ticket.testScenarios?.join(', ') || 'None defined',
+      hasScreenshots: ticket.hasScreenshots ? 'Yes' : 'No',
+      hasDiagrams: ticket.hasDiagrams ? 'Yes' : 'No',
+      storyPoints: ticket.storyPoints?.toString() || 'Not estimated',
+      labels: ticket.labels.join(', ') || 'None',
+      components: ticket.components.join(', ') || 'None',
+      format_instructions: parser.getFormatInstructions(),
+    };
+
+    // Fill in the template
+    let prompt = TICKET_QUALITY_PROMPT;
+    for (const [key, value] of Object.entries(inputs)) {
+      prompt = prompt.replace(new RegExp(`\\{${key}\\}`, 'g'), String(value));
+    }
+
+    return {
+      step: 'ticketQuality',
+      prompt,
+      schema: TicketQualitySchema,
+      formatInstructions: parser.getFormatInstructions(),
+      inputs,
+      instructions: 'Analyze the ticket quality and return a JSON object matching the schema',
+    };
+  }
+
+  /**
+   * Build AC validation prompt (PROMPT_ONLY mode)
+   */
+  private buildACValidationPrompt(context: JiraSubAgentContext): AnalysisPrompt {
+    const parser = StructuredOutputParser.fromZodSchema(AcceptanceCriteriaValidationSchema);
+
+    // Format acceptance criteria with IDs
+    const acList = context.ticket.acceptanceCriteriaList || [];
+    const formattedAC = acList
+      .map((ac, i) => `AC-${i + 1}: ${ac}`)
+      .join('\n');
+
+    // Format files changed
+    const filesChanged = context.files
+      .map((f) => `${f.path} (+${f.additions}/-${f.deletions}) [${f.status}]`)
+      .join('\n');
+
+    // Truncate diff if too long
+    const maxDiffLength = 15000;
+    const truncatedDiff =
+      context.diff.length > maxDiffLength
+        ? context.diff.substring(0, maxDiffLength) + '\n... [diff truncated]'
+        : context.diff;
+
+    const inputs = {
+      ticketKey: context.ticket.key,
+      ticketType: context.ticket.type,
+      ticketTitle: context.ticket.title,
+      ticketDescription: context.ticket.description?.substring(0, 2000) || 'No description',
+      acceptanceCriteria: formattedAC || 'No acceptance criteria defined',
+      prTitle: context.prTitle,
+      prDescription: context.prDescription || 'No description',
+      filesChanged,
+      diff: truncatedDiff,
+      prSummary: context.prSummary || 'No summary available',
+      format_instructions: parser.getFormatInstructions(),
+    };
+
+    // Fill in the template
+    let prompt = AC_VALIDATION_PROMPT;
+    for (const [key, value] of Object.entries(inputs)) {
+      prompt = prompt.replace(new RegExp(`\\{${key}\\}`, 'g'), String(value));
+    }
+
+    return {
+      step: 'acValidation',
+      prompt,
+      schema: AcceptanceCriteriaValidationSchema,
+      formatInstructions: parser.getFormatInstructions(),
+      inputs,
+      instructions: 'Validate acceptance criteria coverage and return a JSON object matching the schema',
+    };
+  }
+
+  /**
+   * Build peer review prompt (PROMPT_ONLY mode)
+   */
+  private buildPeerReviewPrompt(context: JiraSubAgentContext): AnalysisPrompt {
+    const parser = StructuredOutputParser.fromZodSchema(PeerReviewAnalysisSchema);
+
+    // Format files changed
+    const filesChanged = context.files
+      .map((f) => `${f.path} (+${f.additions}/-${f.deletions}) [${f.status}]`)
+      .join('\n');
+
+    // Truncate diff if too long
+    const maxDiffLength = 10000;
+    const truncatedDiff =
+      context.diff.length > maxDiffLength
+        ? context.diff.substring(0, maxDiffLength) + '\n... [diff truncated]'
+        : context.diff;
+
+    const inputs = {
+      ticketKey: context.ticket.key,
+      ticketType: context.ticket.type,
+      ticketTitle: context.ticket.title,
+      ticketDescription: context.ticket.description?.substring(0, 2000) || 'No description',
+      acceptanceCriteria:
+        context.ticket.acceptanceCriteria ||
+        context.ticket.acceptanceCriteriaList?.join('\n') ||
+        'None defined',
+      prTitle: context.prTitle,
+      prDescription: context.prDescription || 'No description',
+      filesChanged,
+      diff: truncatedDiff,
+      prSummary: context.prSummary || 'No summary available',
+      prRisks: context.prRisks?.join(', ') || 'None identified',
+      // Placeholders for ticket quality - will be filled by calling LLM
+      ticketQualityScore: '{RESULT_FROM_ticketQuality.overallScore}',
+      isReviewable: '{RESULT_FROM_ticketQuality.reviewable}',
+      acCompliancePercentage: '{RESULT_FROM_acValidation.compliancePercentage}',
+      gapsFound: '{RESULT_FROM_acValidation.gaps}',
+      format_instructions: parser.getFormatInstructions(),
+    };
+
+    // Fill in the template
+    let prompt = PEER_REVIEW_PROMPT;
+    for (const [key, value] of Object.entries(inputs)) {
+      prompt = prompt.replace(new RegExp(`\\{${key}\\}`, 'g'), String(value));
+    }
+
+    return {
+      step: 'peerReview',
+      prompt,
+      schema: PeerReviewAnalysisSchema,
+      formatInstructions: parser.getFormatInstructions(),
+      inputs,
+      instructions: 'Perform peer review analysis and return a JSON object matching the schema',
+    };
+  }
+
+  /**
+   * Rate the quality of a Jira ticket (EXECUTE mode)
    */
   async rateTicketQuality(ticket: IssueTicket): Promise<TicketQualityRating> {
+    if (!this.llm) {
+      throw new Error('LLM is required for rateTicketQuality in EXECUTE mode');
+    }
+
     const parser = StructuredOutputParser.fromZodSchema(TicketQualitySchema);
 
     const prompt = ChatPromptTemplate.fromTemplate(TICKET_QUALITY_PROMPT);
@@ -468,6 +692,10 @@ export class JiraSubAgent {
   async validateAcceptanceCriteria(
     context: JiraSubAgentContext
   ): Promise<AcceptanceCriteriaValidation> {
+    if (!this.llm) {
+      throw new Error('LLM is required for validateAcceptanceCriteria in EXECUTE mode');
+    }
+
     const parser = StructuredOutputParser.fromZodSchema(AcceptanceCriteriaValidationSchema);
 
     const prompt = ChatPromptTemplate.fromTemplate(AC_VALIDATION_PROMPT);
@@ -518,6 +746,10 @@ export class JiraSubAgent {
     ticketQuality: TicketQualityRating,
     acValidation?: AcceptanceCriteriaValidation
   ): Promise<PeerReviewAnalysis> {
+    if (!this.llm) {
+      throw new Error('LLM is required for generatePeerReview in EXECUTE mode');
+    }
+
     const parser = StructuredOutputParser.fromZodSchema(PeerReviewAnalysisSchema);
 
     const prompt = ChatPromptTemplate.fromTemplate(PEER_REVIEW_PROMPT);

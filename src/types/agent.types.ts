@@ -48,6 +48,47 @@ export interface AnalysisMode {
   complexity: boolean;
 }
 
+/**
+ * Execution mode for LLM-agnostic operation
+ */
+export enum ExecutionMode {
+  EXECUTE = 'execute',          // CLI: Execute prompts with API key
+  PROMPT_ONLY = 'prompt_only',  // MCP: Return prompts for calling LLM
+}
+
+/**
+ * Individual analysis prompt for PROMPT_ONLY mode
+ * Supports both main PR analysis and peer review prompts
+ */
+export interface AnalysisPrompt {
+  step: 'fileAnalysis' | 'riskDetection' | 'summaryGeneration' | 'selfRefinement' | 'ticketQuality' | 'acValidation' | 'peerReview';
+  prompt: string;               // The filled-in prompt template
+  context?: Record<string, any>; // Additional context (main analysis)
+  instructions: string;          // How to execute this prompt
+  // Fields for peer review prompts (optional)
+  schema?: any;                 // Zod schema for structured output
+  formatInstructions?: string;  // Format instructions for output
+  inputs?: Record<string, unknown>; // Input variables
+}
+
+/**
+ * Result when in PROMPT_ONLY mode - returns prompts instead of executing them
+ * Also includes static analysis results that don't require an LLM
+ */
+export interface PromptOnlyResult {
+  mode: 'prompt_only';
+  context: AgentContext;        // All input data
+  prompts: AnalysisPrompt[];    // Prompts for calling LLM
+  instructions: string;          // How to execute all prompts
+  // Static analysis results (run immediately, no LLM needed)
+  staticAnalysis?: {
+    testSuggestions?: TestSuggestion[];
+    devOpsCostEstimates?: DevOpsCostEstimate[];
+    coverageReport?: CoverageReport;
+    projectClassification?: string;
+  };
+}
+
 export interface RiskItem {
   description: string;
   archDocsReference?: {
@@ -163,6 +204,11 @@ export interface AgentResult {
   devOpsCostEstimates?: DevOpsCostEstimate[];
   coverageReport?: CoverageReport;
 }
+
+/**
+ * Union type for agent results - either executed results or prompts to execute
+ */
+export type AgentResultOrPrompts = AgentResult | PromptOnlyResult;
 
 // Alias for backward compatibility
 export type AgentAnalysisResult = AgentResult;
