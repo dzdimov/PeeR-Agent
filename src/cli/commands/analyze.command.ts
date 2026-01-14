@@ -642,16 +642,33 @@ export async function analyzePR(options: AnalyzeOptions = {}): Promise<void> {
       }
     }
 
-    // Auto-open dashboard after analysis completes
+    // Auto-start and open dashboard after analysis completes
     try {
       const dashboardUrl = 'http://localhost:3000';
-      console.log(chalk.gray(`\n📊 Opening dashboard at ${dashboardUrl}...`));
+      console.log(chalk.gray(`\n📊 Starting dashboard...`));
+
+      // Start dashboard server in background
+      const { spawn } = await import('child_process');
+      const dashboardProcess = spawn(process.execPath, [
+        process.argv[1], // Path to CLI entry point
+        'dashboard'
+      ], {
+        detached: true,
+        stdio: 'ignore'
+      });
+      dashboardProcess.unref();
+
+      // Wait a moment for server to start
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      console.log(chalk.green(`✓ Dashboard running at ${dashboardUrl}`));
+      console.log(chalk.gray(`   Opening browser...`));
       await open(dashboardUrl);
     } catch (openError: any) {
       if (options.verbose) {
-        console.log(chalk.yellow(`   Could not open dashboard automatically: ${openError.message}`));
+        console.log(chalk.yellow(`   Could not start dashboard automatically: ${openError.message}`));
       }
-      console.log(chalk.gray(`   View results at: http://localhost:3000`));
+      console.log(chalk.gray(`   Start manually with: pr-agent dashboard`));
     }
   } catch (error: any) {
     spinner.fail('Analysis failed');

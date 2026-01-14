@@ -182,3 +182,4 @@ pr-agent.db
 # Local MCP configuration override (optional - for user-specific settings)
 # Note: The project .mcp.json is tracked for team-wide configuration
 .mcp.local.json
+*.db
