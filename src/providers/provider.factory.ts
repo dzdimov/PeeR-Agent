@@ -3,9 +3,10 @@ import { AnthropicProvider } from './anthropic.provider.js';
 import { OpenAIProvider } from './openai.provider.js';
 import { GoogleProvider } from './google.provider.js';
 import { ZhipuProvider } from './zhipu.provider.js';
+import { OpenRouterProvider } from './openrouter.provider.js';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 
-export type SupportedProvider = 'anthropic' | 'openai' | 'google' | 'zhipu';
+export type SupportedProvider = 'anthropic' | 'openai' | 'google' | 'zhipu' | 'openrouter';
 
 export interface ProviderOptions {
   provider?: SupportedProvider;
@@ -30,7 +31,7 @@ export class ProviderFactory {
   ): ILLMProvider {
     // Normalize provider names
     const normalizedName = this.normalizeProviderName(providerName);
-    
+
     // Check if we already have an instance (unless a specific API key is provided)
     if (!apiKey && this.providers.has(normalizedName)) {
       return this.providers.get(normalizedName)!;
@@ -38,7 +39,7 @@ export class ProviderFactory {
 
     // Create new provider instance
     let provider: ILLMProvider;
-    
+
     switch (normalizedName) {
       case 'anthropic':
         provider = new AnthropicProvider(apiKey);
@@ -52,8 +53,11 @@ export class ProviderFactory {
       case 'zhipu':
         provider = new ZhipuProvider(apiKey);
         break;
+      case 'openrouter':
+        provider = new OpenRouterProvider(apiKey);
+        break;
       default:
-        throw new Error(`Unsupported provider: ${providerName}. Supported: anthropic, openai, google, zhipu`);
+        throw new Error(`Unsupported provider: ${providerName}. Supported: anthropic, openai, google, zhipu, openrouter`);
     }
 
     // Cache the provider if no specific API key was provided
@@ -114,6 +118,7 @@ export class ProviderFactory {
     if (normalized === 'claude') return 'anthropic';
     if (normalized === 'gemini') return 'google';
     if (normalized === 'glm' || normalized === 'zhipuai') return 'zhipu';
+    if (normalized === 'openrouter.ai') return 'openrouter';
     return normalized;
   }
 
@@ -121,7 +126,6 @@ export class ProviderFactory {
    * Get list of available providers
    */
   public static getAvailableProviders(): SupportedProvider[] {
-    return ['anthropic', 'openai', 'google', 'zhipu'];
+    return ['anthropic', 'openai', 'google', 'zhipu', 'openrouter'];
   }
 }
-

@@ -12,6 +12,7 @@ export interface UserConfig {
     openai?: string;
     google?: string;
     zhipu?: string;
+    openrouter?: string;
   };
   ai?: {
     provider?: string;
@@ -140,14 +141,14 @@ export async function loadUserConfig(
     if (error instanceof ConfigurationError) {
       throw error;
     }
-    
+
     if (error instanceof SyntaxError) {
       throw new ConfigurationError(
         `Invalid JSON in configuration file: ${error.message}\n\nRun: pr-agent config --init to recreate configuration.`,
         'config',
       );
     }
-    
+
     if (verbose) {
       console.error(chalk.red(`❌ Error loading configuration: ${error instanceof Error ? error.message : String(error)}`));
     }
@@ -173,7 +174,7 @@ export async function checkConfiguration(): Promise<boolean> {
 
   try {
     const config = await loadUserConfig(false, true); // Validate config
-    
+
     // Basic validation
     if (!config.ai?.provider && !process.env.ANTHROPIC_API_KEY && !process.env.OPENAI_API_KEY && !process.env.GOOGLE_API_KEY) {
       console.log(chalk.yellow('\n⚠️  No AI provider configured'));
@@ -223,6 +224,7 @@ export function getApiKey(provider: string, config?: UserConfig): string | undef
     openai: 'OPENAI_API_KEY',
     google: 'GOOGLE_API_KEY',
     zhipu: 'ZHIPU_API_KEY',
+    openrouter: 'OPENROUTER_API_KEY',
   };
 
   const envVar = envVarMap[provider.toLowerCase()];
