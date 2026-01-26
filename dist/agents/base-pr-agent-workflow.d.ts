@@ -4,7 +4,7 @@
  */
 import { MemorySaver } from '@langchain/langgraph';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import { AgentContext, AgentResult, FileAnalysis, AgentExecutionOptions } from '../types/agent.types.js';
+import { AgentContext, AgentResultOrPrompts, FileAnalysis, AgentExecutionOptions, ExecutionMode } from '../types/agent.types.js';
 /**
  * Agent workflow state
  */
@@ -37,19 +37,42 @@ export interface PRAgentWorkflowConfig {
  * Base class for PR agents with self-refinement workflow
  */
 export declare abstract class BasePRAgentWorkflow {
-    protected model: BaseChatModel;
-    protected workflow: ReturnType<typeof this.buildWorkflow>;
+    protected model?: BaseChatModel;
+    protected mode: ExecutionMode;
+    protected workflow?: ReturnType<typeof this.buildWorkflow>;
     protected checkpointer: MemorySaver;
     protected tools: any[];
-    constructor(model: BaseChatModel);
+    constructor(mode?: ExecutionMode, model?: BaseChatModel);
     /**
      * Build the PR analysis workflow
      */
     private buildWorkflow;
     /**
      * Execute the agent workflow
+     * Routes to either EXECUTE mode (run analysis) or PROMPT_ONLY mode (return prompts)
      */
-    execute(context: AgentContext, options?: AgentExecutionOptions): Promise<AgentResult>;
+    execute(context: AgentContext, options?: AgentExecutionOptions): Promise<AgentResultOrPrompts>;
+    /**
+     * Build all prompts for PROMPT_ONLY mode (without executing them)
+     * Also runs static analysis tools that don't require an LLM
+     */
+    private buildAllPrompts;
+    /**
+     * Build file analysis prompt
+     */
+    private buildFileAnalysisPrompt;
+    /**
+     * Build risk detection prompt
+     */
+    private buildRiskDetectionPrompt;
+    /**
+     * Build summary generation prompt
+     */
+    private buildSummaryPrompt;
+    /**
+     * Execute the agent workflow in EXECUTE mode (with LLM)
+     */
+    private executeAnalysis;
     /**
      * Fast path execution - skip refinement loop but still use LLM for detailed analysis
      */

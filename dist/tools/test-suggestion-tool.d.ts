@@ -34,74 +34,49 @@ export declare function createTestSuggestionTool(): DynamicStructuredTool<z.ZodO
         additions: z.ZodNumber;
     }, "strip", z.ZodTypeAny, {
         path: string;
-        diff: string;
         additions: number;
+        diff: string;
     }, {
         path: string;
-        diff: string;
         additions: number;
+        diff: string;
     }>, "many">;
     framework: z.ZodOptional<z.ZodString>;
     repoPath: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     files: {
         path: string;
-        diff: string;
         additions: number;
+        diff: string;
     }[];
     repoPath?: string | undefined;
     framework?: string | undefined;
 }, {
     files: {
         path: string;
-        diff: string;
         additions: number;
+        diff: string;
     }[];
     repoPath?: string | undefined;
     framework?: string | undefined;
 }>, {
     files: {
         path: string;
-        diff: string;
         additions: number;
+        diff: string;
     }[];
     repoPath?: string | undefined;
     framework?: string | undefined;
 }, {
     files: {
         path: string;
-        diff: string;
         additions: number;
+        diff: string;
     }[];
     repoPath?: string | undefined;
     framework?: string | undefined;
-}, string>;
+}, string, "suggest_tests">;
 /**
  * Generate test code template based on framework and code
  */
 export declare function generateTestTemplate(framework: string, filePath: string, codeSnippet: string, functionNames?: string[]): string;
-/**
- * Test Enhancement Suggestion - analyzes existing tests and suggests improvements
- */
-export interface TestEnhancement {
-    testFile: string;
-    sourceFile: string;
-    currentTests: string[];
-    missingScenarios: string[];
-    suggestions: string[];
-    enhancementCode?: string;
-}
-/**
- * Analyze existing test file and suggest enhancements
- */
-export declare function analyzeTestQuality(testFile: {
-    path: string;
-    diff: string;
-}, sourceFile: {
-    path: string;
-    diff: string;
-}, framework: string): TestEnhancement;
-/**
- * Format test enhancement for display
- */
-export declare function formatTestEnhancement(enhancement: TestEnhancement): string;

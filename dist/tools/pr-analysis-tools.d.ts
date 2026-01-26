@@ -27,7 +27,7 @@ export declare function createFileAnalyzerTool(): DynamicStructuredTool<z.ZodObj
 }, {
     filePath: string;
     diffContent: string;
-}, string>;
+}, string, "analyze_file">;
 /**
  * Create risk detector tool
  */
@@ -46,7 +46,7 @@ export declare function createRiskDetectorTool(): DynamicStructuredTool<z.ZodObj
 }, {
     diff: string;
     context?: string | undefined;
-}, string>;
+}, string, "detect_risks">;
 /**
  * Create complexity scorer tool
  */
@@ -65,7 +65,7 @@ export declare function createComplexityScorerTool(): DynamicStructuredTool<z.Zo
 }, {
     filesAnalyzed: any[];
     totalChanges: number;
-}, string>;
+}, string, "score_complexity">;
 /**
  * Create summary generator tool
  */
@@ -84,7 +84,7 @@ export declare function createSummaryGeneratorTool(): DynamicStructuredTool<z.Zo
 }, {
     files: any[];
     title?: string | undefined;
-}, string>;
+}, string, "generate_summary">;
 /**
  * Create code suggestion tool for fixing issues based on reviewer comments
  */
@@ -118,4 +118,4 @@ export declare function createCodeSuggestionTool(): DynamicStructuredTool<z.ZodO
     codeSnippet: string;
     prTitle?: string | undefined;
     prContext?: string | undefined;
-}, string>;
+}, string, "suggest_code_fix">;

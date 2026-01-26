@@ -18,6 +18,25 @@
 import { z } from 'zod';
 import { IssueTicket } from '../types/issue-tracker.types.js';
 import { BaseLanguageModel } from '@langchain/core/language_models/base';
+import { AnalysisPrompt } from '../types/agent.types.js';
+/**
+ * Peer Review Execution Mode
+ * - EXECUTE: Execute prompts with LLM (CLI mode with API key)
+ * - PROMPT_ONLY: Return prompts for calling LLM to execute (MCP mode, no API key)
+ */
+export declare enum PeerReviewMode {
+    EXECUTE = "execute",
+    PROMPT_ONLY = "prompt_only"
+}
+/**
+ * Result when in PROMPT_ONLY mode (MCP)
+ */
+export interface PromptOnlyResult {
+    mode: 'prompt_only';
+    context: JiraSubAgentContext;
+    prompts: AnalysisPrompt[];
+    instructions: string;
+}
 declare const TicketQualitySchema: z.ZodObject<{
     overallScore: z.ZodNumber;
     dimensions: z.ZodObject<{
@@ -414,14 +433,36 @@ export interface JiraSubAgentContext {
     prRisks?: string[];
 }
 export declare class JiraSubAgent {
-    private llm;
-    constructor(llm: BaseLanguageModel);
+    private mode;
+    private llm?;
+    constructor(mode?: PeerReviewMode, llm?: BaseLanguageModel);
     /**
      * Analyze a ticket and PR, providing comprehensive peer review
+     * Returns either executed results (EXECUTE mode) or prompts (PROMPT_ONLY mode)
      */
-    analyze(context: JiraSubAgentContext): Promise<JiraSubAgentResult>;
+    analyze(context: JiraSubAgentContext): Promise<JiraSubAgentResult | PromptOnlyResult>;
     /**
-     * Rate the quality of a Jira ticket
+     * Build prompts without executing (MCP mode)
+     */
+    private buildPrompts;
+    /**
+     * Execute analysis with LLM (CLI mode)
+     */
+    private executeAnalysis;
+    /**
+     * Build ticket quality prompt (PROMPT_ONLY mode)
+     */
+    private buildTicketQualityPrompt;
+    /**
+     * Build AC validation prompt (PROMPT_ONLY mode)
+     */
+    private buildACValidationPrompt;
+    /**
+     * Build peer review prompt (PROMPT_ONLY mode)
+     */
+    private buildPeerReviewPrompt;
+    /**
+     * Rate the quality of a Jira ticket (EXECUTE mode)
      */
     rateTicketQuality(ticket: IssueTicket): Promise<TicketQualityRating>;
     /**

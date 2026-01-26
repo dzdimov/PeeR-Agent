@@ -5,7 +5,7 @@
 
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { BasePRAgentWorkflow } from './base-pr-agent-workflow.js';
-import { AgentContext, AgentResult, AgentMetadata, AnalysisMode } from '../types/agent.types.js';
+import { AgentContext, AgentResult, AgentResultOrPrompts, AgentMetadata, AnalysisMode, ExecutionMode } from '../types/agent.types.js';
 import { parseDiff } from '../tools/pr-analysis-tools.js';
 import { ProviderFactory, ProviderOptions } from '../providers/index.js';
 import { parseAllArchDocs, archDocsExists } from '../utils/arch-docs-parser.js';
@@ -16,6 +16,8 @@ import { buildArchDocsContext } from '../utils/arch-docs-rag.js';
  * Used by MCP server to pass its underlying LLM model
  */
 export interface PRAnalyzerOptions extends ProviderOptions {
+  /** Execution mode: EXECUTE (with API key) or PROMPT_ONLY (return prompts) */
+  mode?: ExecutionMode;
   /** Pre-configured LangChain model (for MCP server pass-through) */
   chatModel?: BaseChatModel;
 }
@@ -25,23 +27,29 @@ export interface PRAnalyzerOptions extends ProviderOptions {
  */
 export class PRAnalyzerAgent extends BasePRAgentWorkflow {
   constructor(options: PRAnalyzerOptions = {}) {
-    let model: BaseChatModel;
+    // Determine execution mode
+    const mode = options.mode || ExecutionMode.EXECUTE;
 
-    // If a pre-configured BaseChatModel is passed (MCP case), use it directly
-    if (options.chatModel) {
-      model = options.chatModel;
-    } else {
-      // Otherwise create model via ProviderFactory (CLI/Action case - backward compatible)
-      model = ProviderFactory.createChatModel({
-        provider: options.provider || 'anthropic',
-        apiKey: options.apiKey,
-        model: options.model,
-        temperature: options.temperature ?? 0.2,
-        maxTokens: options.maxTokens ?? 4000,
-      });
+    let model: BaseChatModel | undefined;
+
+    // Only create model in EXECUTE mode
+    if (mode === ExecutionMode.EXECUTE) {
+      // If a pre-configured BaseChatModel is passed (MCP case), use it directly
+      if (options.chatModel) {
+        model = options.chatModel;
+      } else {
+        // Otherwise create model via ProviderFactory (CLI/Action case - backward compatible)
+        model = ProviderFactory.createChatModel({
+          provider: options.provider || 'anthropic',
+          apiKey: options.apiKey,
+          model: options.model,
+          temperature: options.temperature ?? 0.2,
+          maxTokens: options.maxTokens ?? 50000,
+        });
+      }
     }
 
-    super(model);
+    super(mode, model);
   }
 
   /**
@@ -64,6 +72,7 @@ export class PRAnalyzerAgent extends BasePRAgentWorkflow {
 
   /**
    * Analyze a PR with full agent workflow
+   * Returns either executed results (EXECUTE mode) or prompts (PROMPT_ONLY mode)
    */
   async analyze(
     diff: string,
@@ -78,7 +87,7 @@ export class PRAnalyzerAgent extends BasePRAgentWorkflow {
       framework?: string;
       enableStaticAnalysis?: boolean;
     }
-  ): Promise<AgentResult> {
+  ): Promise<AgentResultOrPrompts> {
     // Parse diff into files
     const files = parseDiff(diff);
 
@@ -129,7 +138,7 @@ export class PRAnalyzerAgent extends BasePRAgentWorkflow {
       framework?: string;
       enableStaticAnalysis?: boolean;
     }
-  ): Promise<AgentResult> {
+  ): Promise<AgentResultOrPrompts> {
     const files = parseDiff(diff);
 
     // Build arch-docs context if enabled
@@ -160,7 +169,7 @@ export class PRAnalyzerAgent extends BasePRAgentWorkflow {
   /**
    * Analyze specific files only
    */
-  async analyzeFiles(diff: string, filePaths: string[], options?: { useArchDocs?: boolean; repoPath?: string }): Promise<AgentResult> {
+  async analyzeFiles(diff: string, filePaths: string[], options?: { useArchDocs?: boolean; repoPath?: string }): Promise<AgentResultOrPrompts> {
     const allFiles = parseDiff(diff);
     const files = allFiles.filter(f => filePaths.includes(f.path));
 

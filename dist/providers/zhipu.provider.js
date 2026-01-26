@@ -15,8 +15,8 @@ export class ZhipuProvider {
         return !!this.apiKey;
     }
     getDefaultModel() {
-        // GLM-4.7 is mapped to claude-sonnet-4-20250514 in Zhipu's Anthropic-compatible API
-        return 'claude-sonnet-4-20250514';
+        // GLM-4.7 via Z.AI's Anthropic-compatible API
+        return 'glm-4.7';
     }
     getChatModel(config = {}) {
         if (!this.isConfigured()) {
@@ -27,7 +27,8 @@ export class ZhipuProvider {
             anthropicApiUrl: this.baseUrl,
             modelName: config.model || this.getDefaultModel(),
             temperature: config.temperature ?? 0.2,
-            maxTokens: config.maxTokens ?? 4000,
+            maxTokens: config.maxTokens ?? 50000,
+            streaming: true,
         });
     }
 }

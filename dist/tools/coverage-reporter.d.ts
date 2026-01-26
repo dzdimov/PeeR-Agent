@@ -39,7 +39,7 @@ export declare function createCoverageReporterTool(): DynamicStructuredTool<z.Zo
 }, {
     repoPath?: string | undefined;
     forceRead?: boolean | undefined;
-}, string>;
+}, string, "report_coverage">;
 /**
  * Format coverage report for display
  */

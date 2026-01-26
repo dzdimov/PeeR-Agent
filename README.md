@@ -111,14 +111,18 @@ pr-agent help
 
 ### MCP Server Installation
 
-The MCP server provides LLM-agnostic PR analysis for tools like Claude Code, Cursor, Cline, and Windsurf. **No API keys required** - it uses the calling tool's LLM.
+> **Note**: PR Agent is primarily a CLI tool. The MCP server (`src/mcp/`) is an additional component that exposes the same analysis functionality via the Model Context Protocol for use with Claude Code, Cursor, Cline, and Windsurf.
+
+The MCP server is **LLM-agnostic** - it uses the calling tool's AI instead of requiring API keys. It provides two tools: `analyze` (PR analysis) and `dashboard` (web UI).
 
 ```bash
 # Install globally
-npm install -g pr-agent
+npm install -g @techdebtgpt/pr-agent
 
-# The MCP server is available as pr-agent-mcp
+# The MCP server binary is available as pr-agent-mcp
 ```
+
+**For local development** (working on this repository), see [MCP-LOCAL-SETUP.md](MCP-LOCAL-SETUP.md) for team setup instructions.
 
 See [MCP Server](#mcp-server) section for configuration details.
 
@@ -395,17 +399,25 @@ Access the dashboard at `http://YOUR_SERVER_IP:3000/`.
 
 ## MCP Server
 
-The MCP (Model Context Protocol) Server **mirrors the CLI workflow exactly**, providing LLM-agnostic PR analysis for any MCP-compatible tool. It uses the same configuration file (`.pragent.config.json`) and supports all CLI features.
+> **Architecture**: PR Agent is primarily a **CLI tool**. The MCP server (`src/mcp/server.ts`) is a component that imports and reuses the CLI's core `PRAnalyzerAgent` to expose the same functionality via the Model Context Protocol.
 
-### Supported Tools
+The MCP server **mirrors the CLI workflow exactly**, providing LLM-agnostic PR analysis for any MCP-compatible tool. It uses the same configuration file (`.pragent.config.json`) and supports all CLI features.
+
+### Supported MCP Clients
 
 - **Claude Code** - Anthropic's official CLI
+- **VS Code + GitHub Copilot** - Using `.vscode/mcp.json`
 - **Cursor** - AI-first code editor
 - **Cline** - VS Code extension
 - **Windsurf** - AI code editor
-- **GitHub Copilot** (with MCP support)
 
 ### Configuration
+
+**For the repository (committed for team use):**
+
+PR Agent includes `.mcp.json` (Claude Code/Cursor) and `.vscode/mcp.json` (VS Code) that work after running `npm install --legacy-peer-deps && npm run build`.
+
+**For published npm package (global install):**
 
 Add to your tool's MCP configuration:
 
@@ -419,35 +431,62 @@ Add to your tool's MCP configuration:
 }
 ```
 
-From source:
+From source (for local development):
 ```json
 {
   "mcpServers": {
     "pr-agent": {
       "command": "node",
-      "args": ["dist/mcp/server.js"]
+      "args": ["/absolute/path/to/pr-agent/dist/mcp/server.js"]
     }
   }
 }
 ```
 
+> **Local Development**: For colleagues working on this repository, see [MCP-LOCAL-SETUP.md](MCP-LOCAL-SETUP.md) for detailed setup instructions and the `npm run mcp:setup` helper script.
+
 ### Available Tools
 
-| Tool | Description |
-|------|-------------|
-| `analyze` | Main entry point - mirrors `pr-agent analyze` exactly |
-| `dashboard` | Start web dashboard - mirrors `pr-agent dashboard` |
+The MCP server provides two tools (defined in `server.json`):
 
-### Usage Examples
+#### 1. `analyze` - PR/Branch Analysis
 
-Simply ask your AI assistant:
+Mirrors `pr-agent analyze` CLI command exactly.
 
+**What it does:**
+- Parses git diff
+- Detects security risks (hardcoded secrets, SQL injection, XSS, etc.)
+- Calculates complexity scores (1-5 scale)
+- Extracts Jira ticket references from PR title/branch/commits
+- Includes architecture documentation context (if `.arch-docs` exists)
+- Saves analysis to database
+
+**Parameters:**
+- `branch` (optional): Base branch to compare against
+- `staged` (optional): Analyze staged changes instead
+- `title` (optional): PR title for ticket extraction
+- `cwd` (optional): Working directory
+- `peerReview` (optional): Enable Jira ticket validation
+- `archDocs` (optional): Include architecture docs
+
+**Usage:** Ask your AI assistant:
 ```
 Analyze my current branch changes
+Analyze staged changes
+Analyze changes against origin/develop
 ```
 
+#### 2. `dashboard` - Web Dashboard
+
+Starts the analysis history web dashboard on localhost.
+
+**Parameters:**
+- `port` (optional): Port to run on (default: 3000)
+
+**Usage:** Ask your AI assistant:
 ```
 Start the PR Agent dashboard
+Start the dashboard on port 3001
 ```
 
 ### How It Works
@@ -463,6 +502,68 @@ The MCP server does everything the CLI does **except** calling AI providers:
 7. **Returns CLI-formatted output** for the calling LLM to enhance
 
 The calling tool's LLM then adds AI-powered insights to the analysis.
+
+### Integration with Other MCP Servers
+
+For full functionality, install these official MCP servers alongside PR Agent:
+
+#### Atlassian Rovo MCP Server (Jira Integration) - REQUIRED
+
+The PR Agent extracts Jira ticket IDs (e.g., `PROJ-123`), then Claude Code uses the official Atlassian Rovo MCP server to fetch ticket details and validate against requirements.
+
+**⚠️ Required Setup for Team Members (~ 1 hour initial setup)**
+
+This is a **mandatory** integration for the PR Agent to work correctly with peer review features.
+
+**Setup Instructions:**
+
+1. **The MCP configuration is already committed** in `.mcp.json` and `.vscode/mcp.json` - no setup needed!
+
+2. **Restart Claude Code** to load the MCP configuration
+
+3. **Authenticate with Atlassian** (OAuth - no API tokens needed!):
+   - When you first use Claude Code after setup, it will detect the Atlassian MCP server
+   - Claude Code will open a browser window for you to log in with your Atlassian account
+   - Grant permissions to access Jira and Confluence
+   - The authentication is saved and will persist across sessions
+
+4. **Verify the connection**:
+   - Go to https://id.atlassian.com/manage-profile/apps
+   - You should see "Atlassian MCP" listed under "Apps with access to your accounts"
+
+**How It Works:**
+- Uses official Atlassian Rovo MCP Server (cloud-hosted by Atlassian)
+- OAuth 2.1 authentication (secure, no API tokens to manage)
+- Server endpoint: `https://mcp.atlassian.com/v1/sse`
+- Respects your existing Jira/Confluence permissions
+- Works with any Atlassian Cloud site (e.g., `your-company.atlassian.net`)
+
+**Troubleshooting:**
+- **"Failed to reconnect to atlassian"**: Restart Claude Code and it will prompt for re-authentication
+- **Connection issues**: Check your Atlassian Connected Apps at https://id.atlassian.com/manage-profile/apps
+- **Permissions errors**: Make sure you have access to the Jira project in your Atlassian Cloud site
+
+**Documentation:**
+- [Official Atlassian Rovo MCP Server docs](https://support.atlassian.com/atlassian-rovo-mcp-server/)
+- [Atlassian Blog: Remote MCP Server](https://www.atlassian.com/blog/announcements/remote-mcp-server)
+
+#### GitHub MCP Server (Repository Management)
+Provides GitHub API access for repository operations and PR management.
+
+**Installation**: Already configured in `.mcp.json` and `.vscode/mcp.json`. Claude Code will prompt to enable on first use.
+
+**Setup**: Requires GitHub authentication. See [GitHub MCP docs](https://github.com/modelcontextprotocol/servers/tree/main/src/github).
+
+**Workflow Example:**
+```
+You: "Analyze my PR changes"
+  ↓
+PR Agent: Extracts PROJ-123 from branch, analyzes diff, detects risks
+  ↓
+Claude Code + Atlassian MCP: Fetches PROJ-123 details from Jira
+  ↓
+Result: Comprehensive review with ticket validation
+```
 
 ### CLI Parity
 

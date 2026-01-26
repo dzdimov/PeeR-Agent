@@ -92,7 +92,7 @@ export declare function createDevOpsCostEstimatorTool(): DynamicStructuredTool<z
         secretAccessKey?: string | undefined;
         region?: string | undefined;
     } | undefined;
-}, string>;
+}, string, "estimate_devops_costs">;
 /**
  * Format cost estimates for display
  */

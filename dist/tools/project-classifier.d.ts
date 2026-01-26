@@ -69,4 +69,4 @@ export declare function createProjectClassifierTool(): DynamicStructuredTool<z.Z
         filename: string;
         patch?: string | undefined;
     }[];
-}, string>;
+}, string, "classify_project_type">;

@@ -45,8 +45,8 @@ export function registerDashboardCommand(program: Command) {
                 }
             });
 
-            // Catch-all to serve index.html
-            app.get('*', (req, res) => {
+            // Serve index.html for all other routes (must be last)
+            app.get('/', (req, res) => {
                 res.sendFile(path.join(srcPublicDir, 'index.html'));
             });
 
