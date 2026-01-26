@@ -43,3 +43,23 @@ export {
   createProjectClassifierTool,
   formatClassification,
 } from './project-classifier.js';
+
+export {
+  getCoverageAnalysis,
+  runCoverageAnalysis,
+  runEslintAnalysis,
+  getLowCoverageFiles,
+  detectCoverageReport,
+  parseCoverageJson,
+  parseLcovReport,
+  formatCoverageReport as formatCoverageAnalysis,
+  formatStaticAnalysis,
+} from './coverage-analyzer.js';
+export type {
+  CoverageMetrics,
+  FileCoverage,
+  UncoveredCode,
+  CoverageAnalysis,
+  StaticAnalysisIssue,
+  StaticAnalysis,
+} from './coverage-analyzer.js';

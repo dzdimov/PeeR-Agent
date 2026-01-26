@@ -16,6 +16,9 @@ interface AnalyzeOptions {
     archDocs?: boolean;
     peerReview?: boolean;
     showClassification?: boolean;
+    scanCoverage?: boolean;
+    showCoverage?: boolean;
+    showStaticAnalysis?: boolean;
 }
 /**
  * Analyze command - analyze PR diffs with AI

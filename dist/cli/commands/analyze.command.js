@@ -12,6 +12,7 @@ import { createPeerReviewIntegration, formatPeerReviewOutput, PeerReviewMode, } 
 import { ExecutionMode } from '../../types/agent.types.js';
 import { ProviderFactory } from '../../providers/index.js';
 import { saveAnalysis } from '../../db/index.js';
+import { getCoverageAnalysis, formatCoverageAnalysis, runEslintAnalysis, formatStaticAnalysis } from '../../tools/index.js';
 /**
  * Determine which files should be skipped during analysis
  */
@@ -433,6 +434,25 @@ export async function analyzePR(options = {}) {
         const result = analysisResult;
         // Display results
         displayAgentResults(result, mode, options.verbose || false, options.showClassification || false);
+        // Run and display coverage analysis if requested
+        if (options.scanCoverage || options.showCoverage) {
+            console.log(chalk.gray('\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+            const coverageAnalysis = getCoverageAnalysis(process.cwd());
+            if (coverageAnalysis.hasReport) {
+                console.log('\\n' + formatCoverageAnalysis(coverageAnalysis));
+            }
+            else {
+                console.log(chalk.yellow('\\n📊 No coverage report found.'));
+                console.log(chalk.gray('   Run: npm test -- --coverage to generate one.'));
+            }
+        }
+        // Run and display ESLint static analysis if requested
+        if (options.showStaticAnalysis) {
+            console.log(chalk.gray('\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+            console.log(chalk.cyan('\\n🔬 Running static analysis...'));
+            const staticAnalysis = await runEslintAnalysis(process.cwd());
+            console.log('\\n' + formatStaticAnalysis(staticAnalysis));
+        }
         // Save analysis results to local database for dashboard
         try {
             const repoInfo = getRepoInfo();

@@ -20,6 +20,7 @@ import { ProviderFactory, type SupportedProvider } from '../../providers/index.j
 import { Fix } from '../../types/agent.types.js';
 
 import { saveAnalysis } from '../../db/index.js';
+import { getCoverageAnalysis, formatCoverageAnalysis, runEslintAnalysis, formatStaticAnalysis } from '../../tools/index.js';
 
 
 interface AnalyzeOptions {
@@ -40,6 +41,9 @@ interface AnalyzeOptions {
   archDocs?: boolean;
   peerReview?: boolean; // Enable Jira peer review integration
   showClassification?: boolean; // Show project type classification
+  scanCoverage?: boolean; // Run coverage analysis and suggest tests
+  showCoverage?: boolean; // Display coverage metrics
+  showStaticAnalysis?: boolean; // Run and show ESLint static analysis
 }
 
 interface AnalysisMode {
@@ -498,6 +502,26 @@ export async function analyzePR(options: AnalyzeOptions = {}): Promise<void> {
 
     // Display results
     displayAgentResults(result, mode, options.verbose || false, options.showClassification || false);
+
+    // Run and display coverage analysis if requested
+    if (options.scanCoverage || options.showCoverage) {
+      console.log(chalk.gray('\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+      const coverageAnalysis = getCoverageAnalysis(process.cwd());
+      if (coverageAnalysis.hasReport) {
+        console.log('\\n' + formatCoverageAnalysis(coverageAnalysis));
+      } else {
+        console.log(chalk.yellow('\\n📊 No coverage report found.'));
+        console.log(chalk.gray('   Run: npm test -- --coverage to generate one.'));
+      }
+    }
+
+    // Run and display ESLint static analysis if requested
+    if (options.showStaticAnalysis) {
+      console.log(chalk.gray('\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+      console.log(chalk.cyan('\\n🔬 Running static analysis...'));
+      const staticAnalysis = await runEslintAnalysis(process.cwd());
+      console.log('\\n' + formatStaticAnalysis(staticAnalysis));
+    }
 
     // Save analysis results to local database for dashboard
     try {
