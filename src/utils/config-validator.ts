@@ -16,11 +16,12 @@ export const UserConfigSchema = z.object({
       openai: z.string().optional(),
       google: z.string().optional(),
       zhipu: z.string().optional(),
+      openrouter: z.string().optional(),
     })
     .optional(),
   ai: z
     .object({
-      provider: z.enum(['anthropic', 'openai', 'google', 'zhipu']).optional(),
+      provider: z.enum(['anthropic', 'openai', 'google', 'zhipu', 'openrouter']).optional(),
       model: z.string().optional(),
       temperature: z.number().min(0).max(2).optional(),
       maxTokens: z.number().positive().int().optional(),
@@ -99,7 +100,7 @@ export function validateConfig(config: UserConfig): {
 } {
   try {
     const result = UserConfigSchema.safeParse(config);
-    
+
     if (result.success) {
       return {
         success: true,
@@ -111,7 +112,7 @@ export function validateConfig(config: UserConfig): {
         const path = err.path.join('.');
         return `${path}: ${err.message}`;
       });
-      
+
       return {
         success: false,
         errors,
@@ -130,12 +131,12 @@ export function validateConfig(config: UserConfig): {
  */
 export function validateConfigOrThrow(config: UserConfig, configPath?: string): UserConfig {
   const validation = validateConfig(config);
-  
+
   if (!validation.success) {
     const errorMessage = `Invalid configuration${configPath ? ` in ${configPath}` : ''}:\n${validation.errors.map((e) => `  • ${e}`).join('\n')}\n\nRun: pr-agent config --init to fix configuration.`;
     throw new ConfigurationError(errorMessage, 'config');
   }
-  
+
   return validation.sanitizedConfig!;
 }
 
