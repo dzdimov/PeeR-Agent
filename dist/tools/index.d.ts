@@ -9,3 +9,5 @@ export { isDevOpsFile, analyzeDevOpsFiles, createDevOpsCostEstimatorTool, format
 export { classifyProject, createProjectClassifierTool, formatClassification, } from './project-classifier.js';
 export { getCoverageAnalysis, runCoverageAnalysis, runEslintAnalysis, getLowCoverageFiles, detectCoverageReport, parseCoverageJson, parseLcovReport, formatCoverageReport as formatCoverageAnalysis, formatStaticAnalysis, } from './coverage-analyzer.js';
 export type { CoverageMetrics, FileCoverage, UncoveredCode, CoverageAnalysis, StaticAnalysisIssue, StaticAnalysis, } from './coverage-analyzer.js';
+export { scanCodebaseBaseline, findSourceFiles, findTestFiles, findFilesWithoutTests, generateBaselineTestSuggestions, formatBaselineReport, formatBaselineIssues, } from './baseline-scanner.js';
+export type { BaselineIssue, BaselineScanResult } from './baseline-scanner.js';

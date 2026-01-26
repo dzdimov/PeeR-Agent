@@ -7,4 +7,5 @@ export { detectCoverageTool, findCoverageFiles, readCoverageReport, createCovera
 export { isDevOpsFile, analyzeDevOpsFiles, createDevOpsCostEstimatorTool, formatCostEstimates, } from './devops-cost-estimator.js';
 export { classifyProject, createProjectClassifierTool, formatClassification, } from './project-classifier.js';
 export { getCoverageAnalysis, runCoverageAnalysis, runEslintAnalysis, getLowCoverageFiles, detectCoverageReport, parseCoverageJson, parseLcovReport, formatCoverageReport as formatCoverageAnalysis, formatStaticAnalysis, } from './coverage-analyzer.js';
+export { scanCodebaseBaseline, findSourceFiles, findTestFiles, findFilesWithoutTests, generateBaselineTestSuggestions, formatBaselineReport, formatBaselineIssues, } from './baseline-scanner.js';
 //# sourceMappingURL=index.js.map

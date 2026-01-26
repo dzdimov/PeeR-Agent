@@ -7,6 +7,7 @@ import { analyzePR } from './commands/analyze.command.js';
 import { registerConfigCommand } from './commands/config.command.js';
 import { registerHelpCommand } from './commands/help.command.js';
 import { registerDashboardCommand } from './commands/dashboard.command.js';
+import { initBaseline, viewBaseline } from './commands/init.command.js';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
@@ -26,6 +27,26 @@ program
   .name('pr-agent')
   .description('AI-powered pull request analyzer and code review assistant')
   .version(packageJson.version);
+
+// Init command - first-run baseline analysis
+program
+  .command('init')
+  .description('Initialize codebase baseline (first-run analysis)')
+  .option('--force', 'Overwrite existing baseline', false)
+  .option('--branch <name>', 'Branch to analyze (default: current branch)')
+  .option('--verbose', 'Enable verbose output', false)
+  .action(initBaseline);
+
+// Baseline command - view and manage baseline
+program
+  .command('baseline')
+  .description('View and manage codebase baseline')
+  .option('--show', 'Show all baseline issues', false)
+  .option('--suggest-tests', 'Generate test suggestions for files without tests', false)
+  .option('--filter <type>', 'Filter issues by type (no-test, low-coverage, eslint-error, eslint-warning)')
+  .option('--limit <n>', 'Limit number of suggestions', '5')
+  .option('--verbose', 'Enable verbose output', false)
+  .action(viewBaseline);
 
 // Analyze command (primary command for PR analysis)
 program
@@ -49,6 +70,7 @@ program
   .option('--scan-coverage', 'Run test coverage analysis using nyc/istanbul', false)
   .option('--show-coverage', 'Display coverage metrics if available', false)
   .option('--show-static-analysis', 'Run and display ESLint static analysis results', false)
+  .option('--compare-baseline', 'Compare against stored baseline (show only new issues)', false)
   .option('--peer-review', 'Enable Jira peer review integration', false)
   .option('--verbose', 'Enable verbose output', false)
   .action(analyzePR);
@@ -64,4 +86,3 @@ registerHelpCommand(program);
 
 // Parse CLI arguments
 program.parse();
-

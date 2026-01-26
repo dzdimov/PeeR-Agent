@@ -599,3 +599,187 @@ export function getJiraComplianceStats(): JiraComplianceStats {
     },
   };
 }
+
+// ========== Codebase Baseline (v0.4.0) ==========
+
+export interface CodebaseBaseline {
+  id?: number;
+  repo_owner: string;
+  repo_name: string;
+  branch: string;
+  created_at?: string;
+  updated_at?: string;
+  // Coverage baseline
+  overall_coverage: number;
+  line_coverage: number;
+  branch_coverage: number;
+  // Static analysis baseline
+  eslint_errors: number;
+  eslint_warnings: number;
+  // Test gaps
+  files_without_tests: string;    // JSON array of file paths
+  untested_functions: string;     // JSON array of {file, function}
+  // File inventory
+  total_source_files: number;
+  total_test_files: number;
+  coverage_by_file: string;       // JSON: {filePath: coveragePct}
+  // Raw issues for lookup
+  all_issues: string;             // JSON array of all detected issues
+}
+
+/**
+ * Initialize codebase_baseline table
+ */
+function initBaselineTable() {
+  const db = getDB();
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS codebase_baseline (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo_owner TEXT NOT NULL,
+      repo_name TEXT NOT NULL,
+      branch TEXT NOT NULL DEFAULT 'main',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      overall_coverage REAL DEFAULT 0,
+      line_coverage REAL DEFAULT 0,
+      branch_coverage REAL DEFAULT 0,
+      eslint_errors INTEGER DEFAULT 0,
+      eslint_warnings INTEGER DEFAULT 0,
+      files_without_tests TEXT,
+      untested_functions TEXT,
+      total_source_files INTEGER DEFAULT 0,
+      total_test_files INTEGER DEFAULT 0,
+      coverage_by_file TEXT,
+      all_issues TEXT,
+      UNIQUE(repo_owner, repo_name, branch)
+    )
+  `);
+}
+
+// Ensure baseline table exists on module load
+try {
+  initBaselineTable();
+} catch (e) {
+  // Table may not exist if getDB() hasn't been called yet
+}
+
+/**
+ * Check if a baseline exists for a repository
+ */
+export function hasBaseline(repoOwner: string, repoName: string, branch: string = 'main'): boolean {
+  const db = getDB();
+  initBaselineTable();
+  const result = db.prepare(`
+    SELECT COUNT(*) as count FROM codebase_baseline 
+    WHERE repo_owner = ? AND repo_name = ? AND branch = ?
+  `).get(repoOwner, repoName, branch) as { count: number };
+  return result.count > 0;
+}
+
+/**
+ * Get the codebase baseline for a repository
+ */
+export function getCodebaseBaseline(
+  repoOwner: string,
+  repoName: string,
+  branch: string = 'main'
+): CodebaseBaseline | null {
+  const db = getDB();
+  initBaselineTable();
+  const result = db.prepare(`
+    SELECT * FROM codebase_baseline 
+    WHERE repo_owner = ? AND repo_name = ? AND branch = ?
+  `).get(repoOwner, repoName, branch) as CodebaseBaseline | undefined;
+  return result || null;
+}
+
+/**
+ * Save or update the codebase baseline
+ */
+export function saveCodebaseBaseline(baseline: Omit<CodebaseBaseline, 'id' | 'created_at' | 'updated_at'>): void {
+  const db = getDB();
+  initBaselineTable();
+
+  const existing = hasBaseline(baseline.repo_owner, baseline.repo_name, baseline.branch);
+
+  if (existing) {
+    // Update existing baseline
+    db.prepare(`
+      UPDATE codebase_baseline SET
+        updated_at = CURRENT_TIMESTAMP,
+        overall_coverage = @overall_coverage,
+        line_coverage = @line_coverage,
+        branch_coverage = @branch_coverage,
+        eslint_errors = @eslint_errors,
+        eslint_warnings = @eslint_warnings,
+        files_without_tests = @files_without_tests,
+        untested_functions = @untested_functions,
+        total_source_files = @total_source_files,
+        total_test_files = @total_test_files,
+        coverage_by_file = @coverage_by_file,
+        all_issues = @all_issues
+      WHERE repo_owner = @repo_owner AND repo_name = @repo_name AND branch = @branch
+    `).run(baseline);
+  } else {
+    // Insert new baseline
+    db.prepare(`
+      INSERT INTO codebase_baseline (
+        repo_owner, repo_name, branch,
+        overall_coverage, line_coverage, branch_coverage,
+        eslint_errors, eslint_warnings,
+        files_without_tests, untested_functions,
+        total_source_files, total_test_files,
+        coverage_by_file, all_issues
+      ) VALUES (
+        @repo_owner, @repo_name, @branch,
+        @overall_coverage, @line_coverage, @branch_coverage,
+        @eslint_errors, @eslint_warnings,
+        @files_without_tests, @untested_functions,
+        @total_source_files, @total_test_files,
+        @coverage_by_file, @all_issues
+      )
+    `).run(baseline);
+  }
+}
+
+/**
+ * Delete a baseline (useful for re-initialization)
+ */
+export function deleteBaseline(repoOwner: string, repoName: string, branch: string = 'main'): void {
+  const db = getDB();
+  initBaselineTable();
+  db.prepare(`
+    DELETE FROM codebase_baseline 
+    WHERE repo_owner = ? AND repo_name = ? AND branch = ?
+  `).run(repoOwner, repoName, branch);
+}
+
+/**
+ * Get files without tests from baseline
+ */
+export function getFilesWithoutTests(repoOwner: string, repoName: string, branch: string = 'main'): string[] {
+  const baseline = getCodebaseBaseline(repoOwner, repoName, branch);
+  if (!baseline || !baseline.files_without_tests) {
+    return [];
+  }
+  try {
+    return JSON.parse(baseline.files_without_tests);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Get all issues from baseline for viewing
+ */
+export function getBaselineIssues(repoOwner: string, repoName: string, branch: string = 'main'): any[] {
+  const baseline = getCodebaseBaseline(repoOwner, repoName, branch);
+  if (!baseline || !baseline.all_issues) {
+    return [];
+  }
+  try {
+    return JSON.parse(baseline.all_issues);
+  } catch {
+    return [];
+  }
+}

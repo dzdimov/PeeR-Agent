@@ -38,10 +38,17 @@ npm install -g @techdebtgpt/pr-agent
 # Setup
 pr-agent config --init
 
+# First-run baseline (scans entire codebase)
+pr-agent init                        # Initialize codebase baseline
+pr-agent baseline                    # View baseline summary
+pr-agent baseline --show             # View all baseline issues
+pr-agent baseline --suggest-tests    # Get test suggestions for untested files
+
 # Analyze (common commands)
 pr-agent analyze                    # Analyze against origin/main
 pr-agent analyze --staged           # Analyze staged changes
 pr-agent analyze --branch develop   # Compare with develop branch
+pr-agent analyze --compare-baseline # Show only NEW issues (vs baseline)
 pr-agent analyze --full --verbose   # Full analysis with details
 
 # Configuration
@@ -49,6 +56,7 @@ pr-agent config --list              # View config
 pr-agent config --set ai.provider=anthropic
 pr-agent help                       # Show help
 ```
+
 
 ## Table of Contents
 

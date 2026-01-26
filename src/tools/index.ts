@@ -63,3 +63,14 @@ export type {
   StaticAnalysisIssue,
   StaticAnalysis,
 } from './coverage-analyzer.js';
+
+export {
+  scanCodebaseBaseline,
+  findSourceFiles,
+  findTestFiles,
+  findFilesWithoutTests,
+  generateBaselineTestSuggestions,
+  formatBaselineReport,
+  formatBaselineIssues,
+} from './baseline-scanner.js';
+export type { BaselineIssue, BaselineScanResult } from './baseline-scanner.js';
