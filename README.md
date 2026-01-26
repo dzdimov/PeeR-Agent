@@ -54,6 +54,7 @@ pr-agent analyze --full --verbose   # Full analysis with details
 # Configuration
 pr-agent config --list              # View config
 pr-agent config --set ai.provider=anthropic
+pr-agent config --set ai.provider=openrouter # Use OpenRouter
 pr-agent help                       # Show help
 ```
 
