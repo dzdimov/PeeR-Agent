@@ -118,6 +118,8 @@ export interface TestSuggestion {
   testCode: string;
   description: string;
   testFilePath?: string; // Suggested path for the test file
+  isEnhancement?: boolean; // True if this is an enhancement to existing tests
+  existingTestFile?: string; // Path to existing test file being enhanced
 }
 
 /**
@@ -203,6 +205,8 @@ export interface AgentResult {
   testSuggestions?: TestSuggestion[];
   devOpsCostEstimates?: DevOpsCostEstimate[];
   coverageReport?: CoverageReport;
+  // Project classification (v0.3.0)
+  projectClassification?: string;
 }
 
 /**

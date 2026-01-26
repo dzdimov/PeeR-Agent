@@ -37,6 +37,11 @@ program
     .option('--full', 'Show all modes (default)', true)
     .option('--arch-docs', 'Use architecture documentation from .arch-docs folder (auto-detected by default)')
     .option('--max-cost <dollars>', 'Maximum cost in dollars', '5.0')
+    .option('--show-classification', 'Show project type classification (business logic vs QA)', false)
+    .option('--scan-coverage', 'Run test coverage analysis using nyc/istanbul', false)
+    .option('--show-coverage', 'Display coverage metrics if available', false)
+    .option('--show-static-analysis', 'Run and display ESLint static analysis results', false)
+    .option('--peer-review', 'Enable Jira peer review integration', false)
     .option('--verbose', 'Enable verbose output', false)
     .action(analyzePR);
 // Config command
