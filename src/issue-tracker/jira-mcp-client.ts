@@ -287,31 +287,59 @@ export class JiraMcpClient implements IssueTrackerProvider {
   }
 
   private async fetchJiraTicket(key: string): Promise<JiraApiIssue | null> {
+    // Try MCP first if configured
     if (this.config.useMcp && this.mcpCallback) {
-      // Use MCP to fetch ticket
-      // The MCP server should have a tool for fetching individual issues
       try {
         const result = await this.mcpCallback('atlassian:get-issue', {
           issueKey: key,
         });
         return result as JiraApiIssue;
-      } catch {
-        // If specific tool not available, try search
-        const searchResult = await this.mcpCallback('atlassian:search-company-knowledge', {
-          query: `key:${key}`,
-          limit: 1,
-        });
-        if (Array.isArray(searchResult) && searchResult.length > 0) {
-          return searchResult[0] as JiraApiIssue;
+      } catch (mcpError: any) {
+        console.error(`[Jira MCP] Failed to fetch ticket ${key} via MCP:`, mcpError.message);
+
+        // Try MCP search as fallback
+        try {
+          const searchResult = await this.mcpCallback('atlassian:search-company-knowledge', {
+            query: `key:${key}`,
+            limit: 1,
+          });
+          if (Array.isArray(searchResult) && searchResult.length > 0) {
+            return searchResult[0] as JiraApiIssue;
+          }
+        } catch (searchError: any) {
+          console.error(`[Jira MCP] Search fallback also failed:`, searchError.message);
         }
+
+        // Fallback to API if MCP completely failed and API is configured
+        if (this.config.instanceUrl && this.config.email && this.config.apiToken) {
+          console.warn(`[Jira] Falling back to direct API for ticket ${key}`);
+          try {
+            const response = await this.fetchJiraApi(`/rest/api/3/issue/${key}?expand=renderedFields`);
+            if (response.ok) {
+              return response.json() as Promise<JiraApiIssue>;
+            }
+          } catch (apiError: any) {
+            console.error(`[Jira API] Failed to fetch ticket ${key}:`, apiError.message);
+          }
+        } else {
+          console.error(`[Jira] No API credentials configured for fallback`);
+        }
+        return null;
       }
     }
 
-    // Direct API fetch
-    const response = await this.fetchJiraApi(`/rest/api/3/issue/${key}?expand=renderedFields`);
-    if (response.ok) {
-      return response.json() as Promise<JiraApiIssue>;
+    // Direct API fetch (when MCP not configured)
+    if (this.config.instanceUrl && this.config.email && this.config.apiToken) {
+      try {
+        const response = await this.fetchJiraApi(`/rest/api/3/issue/${key}?expand=renderedFields`);
+        if (response.ok) {
+          return response.json() as Promise<JiraApiIssue>;
+        }
+      } catch (error: any) {
+        console.error(`[Jira API] Failed to fetch ticket ${key}:`, error.message);
+      }
     }
+
     return null;
   }
 

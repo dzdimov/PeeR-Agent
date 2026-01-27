@@ -71,13 +71,17 @@ export function isDevOpsFile(filePath: string): { isDevOps: boolean; type: strin
 function extractTerraformResources(content: string): Array<{ resource: string; type: string }> {
     const resources: Array<{ resource: string; type: string }> = [];
 
-    // Match resource blocks
-    const resourceRegex = /resource\s+"([^"]+)"\s+"([^"]+)"/g;
+    // Match resource blocks - handles both regular files and diff format (with + prefix)
+    const resourceRegex = /^[\+\s]*resource\s+"([^"]+)"\s+"([^"]+)"/gm;
     let match;
+
+    console.error(`[DevOps] Extracting Terraform resources from content length: ${content.length}`);
+    console.error(`[DevOps] First 200 chars: ${content.substring(0, 200)}`);
 
     while ((match = resourceRegex.exec(content)) !== null) {
         const resourceType = match[1];
         const resourceName = match[2];
+        console.error(`[DevOps] Found resource: ${resourceType} "${resourceName}"`);
 
         // Map Terraform resources to our cost categories
         if (resourceType.startsWith('aws_instance')) {
@@ -109,6 +113,7 @@ function extractTerraformResources(content: string): Array<{ resource: string; t
         }
     }
 
+    console.error(`[DevOps] Extracted ${resources.length} Terraform resources`);
     return resources;
 }
 
@@ -255,7 +260,10 @@ export function analyzeDevOpsFiles(files: Array<{ path: string; diff: string }>)
     estimates: DevOpsCostEstimate[];
     totalEstimatedCost: number;
 } {
+    console.error(`[DevOps] Analyzing ${files.length} files`);
     const devOpsFiles = files.filter(f => isDevOpsFile(f.path).isDevOps);
+
+    console.error(`[DevOps] Found ${devOpsFiles.length} DevOps files:`, devOpsFiles.map(f => f.path));
 
     if (devOpsFiles.length === 0) {
         return {
@@ -273,6 +281,8 @@ export function analyzeDevOpsFiles(files: Array<{ path: string; diff: string }>)
         const { type } = isDevOpsFile(file.path);
         if (type) fileTypes.add(type);
 
+        console.error(`[DevOps] Processing file: ${file.path} (type: ${type})`);
+
         // Get the full content (in real scenario, we'd read the file)
         // For now, analyze the diff
         const content = file.diff;
@@ -289,14 +299,20 @@ export function analyzeDevOpsFiles(files: Array<{ path: string; diff: string }>)
     const estimates: DevOpsCostEstimate[] = [];
     const seenTypes = new Set<string>();
 
+    console.error(`[DevOps] Total resources found: ${allResources.length}`);
+
     for (const resource of allResources) {
         if (!seenTypes.has(resource.type)) {
             seenTypes.add(resource.type);
-            estimates.push(estimateResourceCost(resource.type));
+            const estimate = estimateResourceCost(resource.type);
+            console.error(`[DevOps] Estimated cost for ${resource.type}: $${estimate.estimatedNewCost}/month`);
+            estimates.push(estimate);
         }
     }
 
     const totalEstimatedCost = estimates.reduce((sum, e) => sum + e.estimatedNewCost, 0);
+
+    console.error(`[DevOps] Final: ${estimates.length} estimates, total: $${totalEstimatedCost}/month`);
 
     return {
         hasDevOpsChanges: true,

@@ -398,13 +398,22 @@ function renderTable(recent) {
             }
         }
 
-        // Construct PR URL (assuming GitHub for now)
-        const prUrl = `https://github.com/${row.repo_owner}/${row.repo_name}/pull/${row.pr_number}`;
+        // Construct link URL - prefer Jira ticket if available, otherwise GitHub PR
+        let linkUrl, linkText;
+        if (row.ticket_key) {
+            // Jira ticket link (assumes ipanovritech.atlassian.net, can be made configurable)
+            linkUrl = `https://ipanovritech.atlassian.net/browse/${row.ticket_key}`;
+            linkText = row.ticket_key;
+        } else {
+            // GitHub PR link
+            linkUrl = `https://github.com/${row.repo_owner}/${row.repo_name}/pull/${row.pr_number}`;
+            linkText = `#${row.pr_number}`;
+        }
 
         tr.innerHTML = `
             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                <a href="${prUrl}" target="_blank" class="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 hover:underline">
-                    #${row.pr_number}
+                <a href="${linkUrl}" target="_blank" class="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 hover:underline">
+                    ${linkText}
                 </a>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${row.repo_owner}/${row.repo_name}</td>
