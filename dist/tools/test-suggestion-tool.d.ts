@@ -34,47 +34,47 @@ export declare function createTestSuggestionTool(): DynamicStructuredTool<z.ZodO
         additions: z.ZodNumber;
     }, "strip", z.ZodTypeAny, {
         path: string;
-        additions: number;
         diff: string;
+        additions: number;
     }, {
         path: string;
-        additions: number;
         diff: string;
+        additions: number;
     }>, "many">;
     framework: z.ZodOptional<z.ZodString>;
     repoPath: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     files: {
         path: string;
-        additions: number;
         diff: string;
+        additions: number;
     }[];
-    framework?: string | undefined;
     repoPath?: string | undefined;
+    framework?: string | undefined;
 }, {
     files: {
         path: string;
-        additions: number;
         diff: string;
+        additions: number;
     }[];
-    framework?: string | undefined;
     repoPath?: string | undefined;
+    framework?: string | undefined;
 }>, {
     files: {
         path: string;
-        additions: number;
         diff: string;
+        additions: number;
     }[];
-    framework?: string | undefined;
     repoPath?: string | undefined;
+    framework?: string | undefined;
 }, {
     files: {
         path: string;
-        additions: number;
         diff: string;
+        additions: number;
     }[];
-    framework?: string | undefined;
     repoPath?: string | undefined;
+    framework?: string | undefined;
 }, string, "suggest_tests">;
 /**
  * Generate test code template based on framework and code
