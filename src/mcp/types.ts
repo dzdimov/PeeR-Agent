@@ -66,6 +66,15 @@ export interface AnalysisOutputOptions {
   peerReviewError?: string;
   allPrompts: AnalysisPrompt[];
   staticAnalysis?: any;
+  devOpsCostEstimates?: Array<{
+    resource: string;
+    resourceType: string;
+    estimatedNewCost: number;
+    confidence: 'high' | 'medium' | 'low';
+    details?: string;
+  }>;
+  totalDevOpsCost?: number;
+  projectClassification?: any;
   repoInfo: RepoInfo;
   currentBranch: string;
   baseBranch?: string;

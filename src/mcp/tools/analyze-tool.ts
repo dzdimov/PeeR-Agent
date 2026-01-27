@@ -18,6 +18,14 @@ import {
   DashboardService,
 } from '../services/index.js';
 import { ERROR_MESSAGES, DEFAULT_DASHBOARD_PORT, DEFAULTS } from '../constants.js';
+import { analyzeDevOpsFiles } from '../../tools/devops-cost-estimator.js';
+import { parseDiff } from '../../tools/pr-analysis-tools.js';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+// __dirname workaround for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 export interface AnalyzeToolArgs {
   branch?: string;
@@ -126,6 +134,32 @@ export class AnalyzeTool {
         }
       );
 
+      // DETERMINISTIC ANALYSIS: DevOps cost estimation (runs even in PROMPT_ONLY mode)
+      let devOpsCostEstimates;
+      let totalDevOpsCost = 0;
+
+      const parsedFiles = parseDiff(diff);
+      const filesForCostAnalysis = parsedFiles.map((f: any) => ({ path: f.path, diff: f.diff }));
+
+      if (verbose) {
+        console.error(`[MCP Server] Parsed ${parsedFiles.length} files for cost analysis`);
+        console.error(`[MCP Server] Sample file paths: ${parsedFiles.slice(0, 3).map((f: any) => f.path).join(', ')}`);
+      }
+
+      const costAnalysis = analyzeDevOpsFiles(filesForCostAnalysis);
+
+      if (verbose) {
+        console.error(`[MCP Server] Cost analysis complete: hasDevOpsChanges=${costAnalysis.hasDevOpsChanges}, estimates=${costAnalysis.estimates.length}`);
+      }
+
+      if (costAnalysis.hasDevOpsChanges && costAnalysis.estimates.length > 0) {
+        devOpsCostEstimates = costAnalysis.estimates;
+        totalDevOpsCost = costAnalysis.totalEstimatedCost;
+        console.error(`[MCP Server] DevOps costs: ${costAnalysis.estimates.length} resources (~$${totalDevOpsCost.toFixed(2)}/month)`);
+      } else if (verbose) {
+        console.error(`[MCP Server] No DevOps costs found`);
+      }
+
       if (verbose) {
         console.error('[MCP Server] Analysis prompts built');
         console.error(`  - mode: ${analysisResult.mode}`);
@@ -180,11 +214,21 @@ export class AnalyzeTool {
         peerReviewError,
         allPrompts: analysisResult.prompts,
         staticAnalysis: analysisResult.staticAnalysis,
+        devOpsCostEstimates,
+        totalDevOpsCost,
+        projectClassification: (analysisResult as any).projectClassification,
         repoInfo,
         currentBranch,
         baseBranch,
         title,
       };
+
+      if (verbose && devOpsCostEstimates) {
+        console.error(`[MCP Server] Passing ${devOpsCostEstimates.length} cost estimates to formatter:`);
+        devOpsCostEstimates.forEach((est, i) => {
+          console.error(`  [${i}] ${est.resourceType}: cost=$${est.estimatedNewCost}, details="${est.details}"`);
+        });
+      }
 
       const outputText = FormatterService.formatAnalysisOutput(outputOptions);
 

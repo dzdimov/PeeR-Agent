@@ -27,6 +27,8 @@ export interface SaveResultsToolArgs {
     peerReviewWarnings?: string[];
     implementationCompleteness?: number;
     qualityScore?: number;
+    devopsCostMonthly?: number;
+    devopsResources?: string;
 }
 export declare class SaveResultsTool {
     private dashboardPort;

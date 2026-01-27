@@ -10,9 +10,9 @@ export declare const DASHBOARD_API_STATS_PATH = "/dashboard/api/stats";
 export declare const DASHBOARD_CATCH_ALL_PATH = "/{*splat}";
 export declare const DEFAULT_GIT_LOG_LIMIT = 10;
 export declare const DEFAULT_MAX_BUFFER: number;
-export declare const DEFAULT_PROMPT_LIMIT_VERBOSE = 20000;
-export declare const DEFAULT_PROMPT_LIMIT_NORMAL = 10000;
-export declare const EXPECTED_TOKEN_USAGE_MINIMUM = 10000;
+export declare const DEFAULT_PROMPT_LIMIT_VERBOSE = 30000;
+export declare const DEFAULT_PROMPT_LIMIT_NORMAL = 15000;
+export declare const EXPECTED_TOKEN_USAGE_MINIMUM = 5000;
 export declare const PROMPT_STEP_EMOJIS: Record<string, string>;
 export declare const DEFAULT_PROMPT_EMOJI = "\uD83D\uDD39";
 export declare const ERROR_MESSAGES: {
@@ -72,6 +72,8 @@ export declare const TOOL_SCHEMAS: {
         peerReviewWarnings: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         implementationCompleteness: z.ZodOptional<z.ZodNumber>;
         qualityScore: z.ZodOptional<z.ZodNumber>;
+        devopsCostMonthly: z.ZodOptional<z.ZodNumber>;
+        devopsResources: z.ZodOptional<z.ZodString>;
     };
     DASHBOARD: {
         port: z.ZodOptional<z.ZodNumber>;

@@ -31,6 +31,36 @@ export class FormatterService {
                 lines.push('\n');
             }
         }
+        lines.push(`---\n\n`);
+        // Project Classification
+        if (options.projectClassification) {
+            const formatter = new OutputFormatter({ mode: 'markdown', verbose: options.verbose });
+            const classificationOutput = formatter.formatProjectClassification(options.projectClassification);
+            if (classificationOutput) {
+                lines.push(classificationOutput);
+                lines.push('\n');
+            }
+            lines.push(`---\n\n`);
+        }
+        // DevOps Cost Estimates
+        lines.push(`## 💰 DevOps Cost Estimates\n`);
+        if (options.devOpsCostEstimates && options.devOpsCostEstimates.length > 0) {
+            lines.push(`**Total Estimated Monthly Cost:** $${options.totalDevOpsCost?.toFixed(2) || '0.00'}\n`);
+            options.devOpsCostEstimates.forEach(estimate => {
+                const emoji = estimate.confidence === 'high' ? '🟢' : estimate.confidence === 'medium' ? '🟡' : '🔴';
+                lines.push(`### ${estimate.resourceType}\n`);
+                if (estimate.details) {
+                    lines.push(`${emoji} ${estimate.resourceType.toUpperCase()}: ~$${estimate.estimatedNewCost.toFixed(2)}/month`);
+                    lines.push(`     ${estimate.details}\n`);
+                }
+            });
+            lines.push(`\n📊 Total Estimated Impact: ~$${options.totalDevOpsCost?.toFixed(2) || '0.00'}/month\n`);
+            lines.push(`\n⚠️  Estimates are approximate. Actual costs depend on usage and configuration.\n`);
+        }
+        else {
+            lines.push(`No DevOps infrastructure changes detected.\n`);
+        }
+        lines.push(`\n---\n`);
         // Peer Review Error (if occurred)
         if (options.peerReviewEnabled && options.peerReviewError) {
             lines.push(`\n---\n`);

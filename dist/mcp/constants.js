@@ -14,9 +14,9 @@ export const DASHBOARD_CATCH_ALL_PATH = '/{*splat}';
 export const DEFAULT_GIT_LOG_LIMIT = 10;
 export const DEFAULT_MAX_BUFFER = 200 * 1024 * 1024; // 200MB
 // Analysis Configuration
-export const DEFAULT_PROMPT_LIMIT_VERBOSE = 20000;
-export const DEFAULT_PROMPT_LIMIT_NORMAL = 10000;
-export const EXPECTED_TOKEN_USAGE_MINIMUM = 10000;
+export const DEFAULT_PROMPT_LIMIT_VERBOSE = 30000;
+export const DEFAULT_PROMPT_LIMIT_NORMAL = 15000;
+export const EXPECTED_TOKEN_USAGE_MINIMUM = 5000;
 // Prompt Step Emojis
 export const PROMPT_STEP_EMOJIS = {
     fileAnalysis: '📄',
@@ -125,6 +125,8 @@ export const TOOL_SCHEMAS = {
         peerReviewWarnings: z.array(z.string()).optional(),
         implementationCompleteness: z.number().optional(),
         qualityScore: z.number().optional(),
+        devopsCostMonthly: z.number().optional().describe('Estimated monthly infrastructure cost'),
+        devopsResources: z.string().optional().describe('JSON array of detected infrastructure resources'),
     },
     DASHBOARD: {
         port: z.number().optional().describe('Port to run the dashboard on (default: 3000)'),

@@ -31,6 +31,8 @@ export interface SaveResultsToolArgs {
   peerReviewWarnings?: string[];
   implementationCompleteness?: number;
   qualityScore?: number;
+  devopsCostMonthly?: number;
+  devopsResources?: string;
 }
 
 export class SaveResultsTool {
@@ -69,6 +71,8 @@ export class SaveResultsTool {
           : undefined,
         implementation_completeness: args.implementationCompleteness,
         quality_score: args.qualityScore,
+        devops_cost_monthly: args.devopsCostMonthly,
+        devops_resources: args.devopsResources,
       });
 
       return {
