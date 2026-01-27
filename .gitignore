@@ -183,3 +183,8 @@ pr-agent.db
 # Note: The project .mcp.json is tracked for team-wide configuration
 .mcp.local.json
 *.db
+
+# Temporary test output and analysis files
+*-output.txt
+*-output-*.txt
+*-snapshot.txt
