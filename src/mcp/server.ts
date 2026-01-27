@@ -660,6 +660,7 @@ Configuration behavior (same as CLI):
 
       // Get peer review prompts if enabled in config
       let peerReviewPrompts: AnalysisPrompt[] = [];
+      let peerReviewError: string | undefined;
       if (peerReviewEnabled) {
         try {
           const peerReviewResult = await runPeerReview(
@@ -674,9 +675,16 @@ Configuration behavior (same as CLI):
           if (peerReviewResult && peerReviewResult.mode === 'prompt_only' && peerReviewResult.promptOnlyResult) {
             peerReviewPrompts = peerReviewResult.promptOnlyResult.prompts;
             console.error(`  - Peer review prompts: ${peerReviewPrompts.length}`);
+          } else if (peerReviewResult && peerReviewResult.error) {
+            peerReviewError = peerReviewResult.error;
+            console.error(`[MCP Server] Peer review failed: ${peerReviewError}`);
           }
         } catch (error: any) {
+          peerReviewError = error.message;
           console.error('[MCP Server] Peer review prompt building failed:', error.message);
+          if (verbose) {
+            console.error(error.stack);
+          }
         }
       }
 
@@ -707,8 +715,22 @@ Configuration behavior (same as CLI):
         }
       }
 
+      // Show peer review error if it occurred
+      if (peerReviewEnabled && peerReviewError) {
+        outputText += `\n---\n\n`;
+        outputText += `## ⚠️ Peer Review Error\n\n`;
+        outputText += `Peer review was enabled but failed: ${peerReviewError}\n\n`;
+        outputText += `**Possible causes:**\n`;
+        outputText += `- Atlassian MCP server not running or misconfigured\n`;
+        outputText += `- No Jira ticket found in branch name or commits\n`;
+        outputText += `- API credentials missing (set instanceUrl, email, apiToken in config)\n\n`;
+        outputText += `Analysis will continue with base prompts only.\n\n`;
+      }
+
       outputText += `---\n\n`;
       outputText += `## ⚡ LLM Analysis Workflow\n\n`;
+      outputText += `**IMPORTANT:** You (the calling LLM) MUST execute ALL ${allPrompts.length} prompts below sequentially.\n`;
+      outputText += `Do NOT write manual analysis. Execute the prompts and use the results.\n\n`;
       outputText += `Execute the following ${allPrompts.length} prompts sequentially:\n\n`;
 
       // List all prompts with clear step numbers
@@ -740,9 +762,12 @@ Configuration behavior (same as CLI):
       });
 
       outputText += `## 💾 Next Steps\n\n`;
-      outputText += `1. Execute all ${allPrompts.length} prompts above sequentially\n`;
-      outputText += `2. Call \`saveAnalysisResults\` with the results\n`;
-      outputText += `3. Present the analysis to the user\n\n`;
+      outputText += `**CRITICAL - YOU MUST DO THIS:**\n`;
+      outputText += `1. **Execute ALL ${allPrompts.length} prompts** above sequentially (do NOT skip, do NOT write manual analysis)\n`;
+      outputText += `2. **Parse the JSON responses** from each prompt execution\n`;
+      outputText += `3. **Call \`saveAnalysisResults\`** tool with the parsed results\n`;
+      outputText += `4. **Present the complete analysis** to the user in a formatted summary\n\n`;
+      outputText += `**Expected token usage:** ~10,000+ tokens (if significantly lower, prompts were not executed)\n\n`;
 
       if (verbose) {
         outputText += `**Save parameters:**\n`;
