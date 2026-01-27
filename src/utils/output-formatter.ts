@@ -271,6 +271,72 @@ export class OutputFormatter {
   }
 
   /**
+   * Format DevOps cost estimates section
+   */
+  formatDevOpsCostEstimates(costEstimates: any[]): string {
+    if (!costEstimates || costEstimates.length === 0) {
+      return '';
+    }
+
+    const lines: string[] = [];
+    lines.push(this.separator());
+    lines.push('');
+
+    if (this.mode === 'markdown') {
+      lines.push('## 💰 DevOps Cost Estimates');
+      lines.push('');
+
+      const totalCost = costEstimates.reduce((sum, e) => sum + (e.estimatedMonthlyCost || 0), 0);
+      lines.push(`**Total Estimated Monthly Cost:** $${totalCost.toFixed(2)}`);
+      lines.push('');
+
+      for (const estimate of costEstimates) {
+        lines.push(`### ${estimate.resourceType || 'Resource'}`);
+        if (estimate.file) {
+          lines.push(`File: \`${estimate.file}\``);
+        }
+        if (estimate.resourceName) {
+          lines.push(`Name: **${estimate.resourceName}**`);
+        }
+        if (estimate.estimatedMonthlyCost !== undefined) {
+          lines.push(`Estimated Cost: **$${estimate.estimatedMonthlyCost.toFixed(2)}/month**`);
+        }
+        if (estimate.notes) {
+          lines.push(`Notes: ${estimate.notes}`);
+        }
+        lines.push('');
+      }
+    } else {
+      lines.push(chalk.yellow.bold('💰 DevOps Cost Estimates'));
+      lines.push('');
+
+      const totalCost = costEstimates.reduce((sum, e) => sum + (e.estimatedMonthlyCost || 0), 0);
+      lines.push(chalk.white(`  Total Estimated Monthly Cost: $${totalCost.toFixed(2)}`));
+      lines.push('');
+
+      for (const estimate of costEstimates) {
+        lines.push(chalk.cyan(`  ${estimate.resourceType || 'Resource'}`));
+        if (estimate.file) {
+          lines.push(chalk.gray(`     File: ${estimate.file}`));
+        }
+        if (estimate.resourceName) {
+          lines.push(chalk.white(`     Name: ${estimate.resourceName}`));
+        }
+        if (estimate.estimatedMonthlyCost !== undefined) {
+          lines.push(chalk.white(`     Estimated Cost: $${estimate.estimatedMonthlyCost.toFixed(2)}/month`));
+        }
+        if (estimate.notes) {
+          lines.push(chalk.gray(`     Notes: ${estimate.notes}`));
+        }
+        lines.push('');
+      }
+    }
+
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  /**
    * Format static analysis section
    */
   formatStaticAnalysis(staticAnalysis: any): string {
@@ -285,9 +351,19 @@ export class OutputFormatter {
       lines.push(this.formatProjectClassification(staticAnalysis.projectClassification));
     }
 
-    // Test suggestions (already formatted)
+    // Test suggestions
     if (staticAnalysis.testSuggestions) {
       lines.push(this.formatTestSuggestions(staticAnalysis.testSuggestions));
+    }
+
+    // DevOps cost estimates
+    if (staticAnalysis.devOpsCostEstimates) {
+      lines.push(this.formatDevOpsCostEstimates(staticAnalysis.devOpsCostEstimates));
+    }
+
+    // Coverage report
+    if (staticAnalysis.coverageReport) {
+      lines.push(this.formatCoverageReport(staticAnalysis.coverageReport));
     }
 
     return lines.join('\n');

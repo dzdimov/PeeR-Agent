@@ -47,6 +47,10 @@ export declare class OutputFormatter {
      */
     formatCoverageReport(coverageReport: any): string;
     /**
+     * Format DevOps cost estimates section
+     */
+    formatDevOpsCostEstimates(costEstimates: any[]): string;
+    /**
      * Format static analysis section
      */
     formatStaticAnalysis(staticAnalysis: any): string;
