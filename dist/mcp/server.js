@@ -406,7 +406,7 @@ async function startDashboardInBackground(port) {
                 res.status(500).json({ error: 'Failed to fetch stats' });
             }
         });
-        app.get('*', (req, res) => {
+        app.get('/{*splat}', (req, res) => {
             res.sendFile(path.join(staticDir, 'index.html'));
         });
         httpServer = app.listen(port, () => {
@@ -779,7 +779,7 @@ server.tool('dashboard', `Start the PR Agent web dashboard on localhost - same a
             res.status(500).json({ error: 'Failed to fetch stats' });
         }
     });
-    app.get('*', (req, res) => {
+    app.get('/{*splat}', (req, res) => {
         res.sendFile(path.join(staticDir, 'index.html'));
     });
     return new Promise((resolve) => {

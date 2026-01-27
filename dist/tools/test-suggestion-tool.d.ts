@@ -49,32 +49,32 @@ export declare function createTestSuggestionTool(): DynamicStructuredTool<z.ZodO
         additions: number;
         diff: string;
     }[];
-    repoPath?: string | undefined;
     framework?: string | undefined;
+    repoPath?: string | undefined;
 }, {
     files: {
         path: string;
         additions: number;
         diff: string;
     }[];
-    repoPath?: string | undefined;
     framework?: string | undefined;
+    repoPath?: string | undefined;
 }>, {
     files: {
         path: string;
         additions: number;
         diff: string;
     }[];
-    repoPath?: string | undefined;
     framework?: string | undefined;
+    repoPath?: string | undefined;
 }, {
     files: {
         path: string;
         additions: number;
         diff: string;
     }[];
-    repoPath?: string | undefined;
     framework?: string | undefined;
+    repoPath?: string | undefined;
 }, string, "suggest_tests">;
 /**
  * Generate test code template based on framework and code

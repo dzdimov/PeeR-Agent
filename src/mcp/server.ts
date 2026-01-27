@@ -483,7 +483,7 @@ async function startDashboardInBackground(port: number): Promise<void> {
       }
     });
 
-    app.get('*', (req, res) => {
+    app.get('/{*splat}', (req, res) => {
       res.sendFile(path.join(staticDir, 'index.html'));
     });
 
@@ -921,7 +921,7 @@ server.tool(
       }
     });
 
-    app.get('*', (req, res) => {
+    app.get('/{*splat}', (req, res) => {
       res.sendFile(path.join(staticDir, 'index.html'));
     });
 
