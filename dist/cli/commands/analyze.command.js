@@ -505,7 +505,7 @@ export async function analyzePR(options = {}) {
             }
         }
         // Run Peer Review if enabled (via flag or config)
-        const peerReviewEnabled = options.peerReview || config.peerReview?.enabled;
+        const peerReviewEnabled = options.peerReview ?? config.peerReview?.enabled ?? false;
         if (options.verbose) {
             console.log(chalk.gray(`\n   Debug: peerReviewEnabled=${peerReviewEnabled}, options.peerReview=${options.peerReview}, config.peerReview?.enabled=${config.peerReview?.enabled}`));
         }

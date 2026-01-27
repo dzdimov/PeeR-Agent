@@ -596,8 +596,8 @@ Returns formatted analysis for the calling LLM to display and enhance with AI in
         // Ignore
       }
 
-      // Enable peer review by default if configured (same as CLI)
-      const peerReviewEnabled = args.peerReview ?? config.peerReview?.enabled ?? true;
+      // Enable peer review only if explicitly enabled in config or args (same as CLI)
+      const peerReviewEnabled = args.peerReview ?? config.peerReview?.enabled ?? false;
       const ticketRefs = extractTicketReferences(
         title,
         currentBranch,

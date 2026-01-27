@@ -505,8 +505,8 @@ Returns formatted analysis for the calling LLM to display and enhance with AI in
         catch {
             // Ignore
         }
-        // Enable peer review by default if configured (same as CLI)
-        const peerReviewEnabled = args.peerReview ?? config.peerReview?.enabled ?? true;
+        // Enable peer review only if explicitly enabled in config or args (same as CLI)
+        const peerReviewEnabled = args.peerReview ?? config.peerReview?.enabled ?? false;
         const ticketRefs = extractTicketReferences(title, currentBranch, commitMessages, config.peerReview?.defaultProject);
         // Create PRAnalyzerAgent in PROMPT_ONLY mode (LLM-agnostic)
         // Instead of executing prompts with an API key, we return prompts for the calling LLM to execute
