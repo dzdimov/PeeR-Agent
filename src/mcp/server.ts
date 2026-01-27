@@ -54,7 +54,8 @@ function getGitDiff(command: string, cwd?: string): string {
       encoding: 'utf-8',
       cwd: cwd || process.cwd(),
       maxBuffer,
-    });
+      shell: true,
+    } as any);
     return diff.trim();
   } catch (error: any) {
     throw new Error(`Failed to get diff: ${error.message}`);
@@ -69,7 +70,8 @@ function getCurrentBranch(cwd?: string): string {
     return execSync('git rev-parse --abbrev-ref HEAD', {
       encoding: 'utf-8',
       cwd: cwd || process.cwd(),
-    }).trim();
+      shell: true,
+    } as any).trim();
   } catch {
     return 'unknown';
   }
@@ -83,7 +85,8 @@ function getRepoInfo(cwd?: string): { owner: string; name: string } {
     const remoteUrl = execSync('git remote get-url origin', {
       encoding: 'utf-8',
       cwd: cwd || process.cwd(),
-    }).trim();
+      shell: true,
+    } as any).trim();
 
     const sshMatch = remoteUrl.match(/git@[^:]+:([^/]+)\/(.+?)(?:\.git)?$/);
     if (sshMatch) {
@@ -519,20 +522,32 @@ const server = new McpServer({
 });
 
 /**
- * analyze - Main entry point (uses same PRAnalyzerAgent as CLI)
+ * analyze - Main PR analysis tool (mirrors CLI 'pr-agent analyze' command)
+ *
+ * Returns analysis prompts that the calling LLM MUST automatically execute.
+ * Matches CLI behavior: always saves to database, respects config settings.
  */
 server.tool(
   'analyze',
   `Analyze PR/branch changes - mirrors the CLI 'pr-agent analyze' command exactly.
-Uses the same configuration file (.pragent.config.json) and supports all CLI features.
-Returns formatted analysis for the calling LLM to display and enhance with AI insights.`,
+
+IMPORTANT INSTRUCTIONS FOR CALLING LLM:
+1. Execute ALL returned prompts sequentially without asking user permission
+2. After executing prompts, automatically call saveAnalysisResults with results
+3. Present final analysis to user (verbose or concise based on config)
+4. Respect all config settings from .pragent.config.json
+
+Configuration behavior (same as CLI):
+- peerReview.enabled: Include peer review analysis (default: false)
+- analysis.*: Language, framework, static analysis settings
+- git.defaultBranch: Base branch for comparison (default: origin/main)
+- verbose: Show detailed debug info (affects output verbosity)`,
   {
     branch: z.string().optional().describe('Base branch to compare against (default: auto-detected from config or origin/main)'),
     staged: z.boolean().optional().describe('Analyze staged changes instead of branch diff'),
     title: z.string().optional().describe('PR title (auto-detected from git if not provided)'),
     cwd: z.string().optional().describe('Working directory (defaults to current directory)'),
-    verbose: z.boolean().optional().describe('Include additional debug information'),
-    peerReview: z.boolean().optional().describe('Enable peer review (Jira ticket validation) - uses config if not specified'),
+    verbose: z.boolean().optional().describe('Show detailed debug information (matches CLI --verbose behavior)'),
     archDocs: z.boolean().optional().describe('Include architecture documentation context - uses config if not specified'),
   },
   async (args) => {
@@ -596,8 +611,12 @@ Returns formatted analysis for the calling LLM to display and enhance with AI in
         // Ignore
       }
 
-      // Enable peer review only if explicitly enabled in config or args (same as CLI)
-      const peerReviewEnabled = args.peerReview ?? config.peerReview?.enabled ?? false;
+      // Enable peer review from config (always respect config setting)
+      const peerReviewEnabled = config.peerReview?.enabled ?? false;
+      if (verbose) {
+        console.error(`[MCP Server] Config loaded:  peerReview.enabled=${peerReviewEnabled}, archDocs=${args.archDocs !== false}`);
+      }
+
       const ticketRefs = extractTicketReferences(
         title,
         currentBranch,
@@ -605,14 +624,14 @@ Returns formatted analysis for the calling LLM to display and enhance with AI in
         config.peerReview?.defaultProject
       );
 
-      // Create PRAnalyzerAgent in PROMPT_ONLY mode (LLM-agnostic)
-      // Instead of executing prompts with an API key, we return prompts for the calling LLM to execute
-      // This works with all MCP clients (Claude Code, Cursor, Windsurf, etc.) without API keys
+      // Create PRAnalyzerAgent in PROMPT_ONLY mode
       const agent = new PRAnalyzerAgent({ mode: ExecutionModeEnum.PROMPT_ONLY });
 
       // Run analysis to get prompts (no LLM execution)
       const useArchDocs = args.archDocs !== false;
-      console.error('[MCP Server] Building analysis prompts in PROMPT_ONLY mode...');
+      if (verbose) {
+        console.error('[MCP Server] Building analysis prompts in PROMPT_ONLY mode...');
+      }
       const analysisResult = await agent.analyze(
         diff,
         title,
@@ -626,16 +645,19 @@ Returns formatted analysis for the calling LLM to display and enhance with AI in
         }
       );
 
-      console.error('[MCP Server] Prompts built successfully');
-      console.error('  - mode:', analysisResult.mode);
-      console.error('  - prompt count:', analysisResult.mode === 'prompt_only' ? analysisResult.prompts.length : 'N/A');
-
-      // Type guard: MCP server always uses PROMPT_ONLY mode
-      if (analysisResult.mode !== 'prompt_only') {
-        throw new Error('Expected prompt-only result in MCP PROMPT_ONLY mode');
+      if (verbose) {
+        console.error('[MCP Server] Analysis prompts built');
+        console.error(`  - mode: ${analysisResult.mode}`);
+        console.error(`  - prompt count: ${analysisResult.mode === 'prompt_only' ? analysisResult.prompts.length : 'N/A'}`);
+        console.error(`  - peer review: ${peerReviewEnabled ? 'enabled' : 'disabled'}`);
       }
 
-      // Get peer review prompts if enabled
+      // Type guard
+      if (analysisResult.mode !== 'prompt_only') {
+        throw new Error('Expected prompt-only result in MCP mode');
+      }
+
+      // Get peer review prompts if enabled in config
       let peerReviewPrompts: AnalysisPrompt[] = [];
       if (peerReviewEnabled) {
         try {
@@ -643,140 +665,109 @@ Returns formatted analysis for the calling LLM to display and enhance with AI in
             config,
             diff,
             title,
-            analysisResult as any, // Pass context - runPeerReview will get prompts too
+            analysisResult as any,
             verbose,
             workDir
           );
 
           if (peerReviewResult && peerReviewResult.mode === 'prompt_only' && peerReviewResult.promptOnlyResult) {
             peerReviewPrompts = peerReviewResult.promptOnlyResult.prompts;
+            console.error(`  - Peer review prompts: ${peerReviewPrompts.length}`);
           }
         } catch (error: any) {
           console.error('[MCP Server] Peer review prompt building failed:', error.message);
         }
       }
 
-      // Format all prompts for output
+      // Combine all prompts
       const allPrompts = [...analysisResult.prompts, ...peerReviewPrompts];
-      let outputText = '🤖 **PR Agent Analysis - LLM-Agnostic Mode**\n\n';
 
-      // === STATIC ANALYSIS RESULTS (non-LLM) ===
+      // Format workflow response (matches CLI behavior)
+      let outputText = '';
+
+      if (verbose) {
+        outputText += `# 🤖 PR Agent Analysis\n\n`;
+        outputText += `**Repository:** ${repoInfo.owner}/${repoInfo.name}\n`;
+        outputText += `**Branch:** ${currentBranch} → ${baseBranch}\n`;
+        outputText += `**PR Title:** ${title || 'Untitled'}\n`;
+        outputText += `**Peer Review:** ${peerReviewEnabled ? '✅ Enabled' : '❌ Disabled'}\n`;
+        outputText += `**Prompts to execute:** ${allPrompts.length}\n\n`;
+        outputText += `---\n\n`;
+      }
+
+      outputText += `## 📊 Static Analysis Results\n\n`;
+
+      // Include static analysis results
       if (analysisResult.staticAnalysis) {
         const sa = analysisResult.staticAnalysis;
-        outputText += '## 📊 Static Analysis Results\n\n';
-        outputText += 'These results were generated immediately without an LLM:\n\n';
 
-        // Project Classification
         if (sa.projectClassification) {
           outputText += sa.projectClassification + '\n\n';
         }
 
-        // Test Suggestions
         if (sa.testSuggestions && sa.testSuggestions.length > 0) {
           outputText += `### 🧪 Test Suggestions (${sa.testSuggestions.length})\n\n`;
           sa.testSuggestions.forEach((test, i) => {
             outputText += `**${i + 1}. ${test.forFile}**\n`;
             outputText += `- Framework: ${test.testFramework}\n`;
-            outputText += `- Suggested path: ${test.testFilePath || 'N/A'}\n`;
-            outputText += `- Description: ${test.description}\n\n`;
-            outputText += '```' + test.testFramework + '\n';
-            outputText += test.testCode.substring(0, 800);
-            if (test.testCode.length > 800) outputText += '\n// ... (truncated)';
-            outputText += '\n```\n\n';
+            outputText += `- Suggested path: ${test.testFilePath || 'N/A'}\n\n`;
           });
         }
-
-        // DevOps Cost Estimates
-        if (sa.devOpsCostEstimates && sa.devOpsCostEstimates.length > 0) {
-          const totalCost = sa.devOpsCostEstimates.reduce((sum, e) => sum + e.estimatedNewCost, 0);
-          outputText += `### 💰 DevOps Cost Estimates (~$${totalCost.toFixed(2)}/month)\n\n`;
-          sa.devOpsCostEstimates.forEach((cost, i) => {
-            outputText += `**${i + 1}. ${cost.resource}** (${cost.resourceType})\n`;
-            outputText += `- Estimated cost: $${cost.estimatedNewCost.toFixed(2)}/month\n`;
-            if (cost.difference) {
-              const sign = cost.difference > 0 ? '+' : '';
-              outputText += `- Change: ${sign}$${cost.difference.toFixed(2)}/month\n`;
-            }
-            outputText += `- Confidence: ${cost.confidence}\n`;
-            if (cost.details) outputText += `- Details: ${cost.details}\n`;
-            outputText += '\n';
-          });
-        }
-
-        // Coverage Report
-        if (sa.coverageReport && sa.coverageReport.available) {
-          outputText += `### 📈 Test Coverage Report\n\n`;
-          outputText += `- Overall: ${sa.coverageReport.overallPercentage?.toFixed(1) || 'N/A'}%\n`;
-          if (sa.coverageReport.lineCoverage !== undefined) {
-            outputText += `- Line coverage: ${sa.coverageReport.lineCoverage.toFixed(1)}%\n`;
-          }
-          if (sa.coverageReport.branchCoverage !== undefined) {
-            outputText += `- Branch coverage: ${sa.coverageReport.branchCoverage.toFixed(1)}%\n`;
-          }
-          if (sa.coverageReport.delta !== undefined) {
-            const sign = sa.coverageReport.delta > 0 ? '+' : '';
-            outputText += `- Change from baseline: ${sign}${sa.coverageReport.delta.toFixed(1)}%\n`;
-          }
-          outputText += `- Tool: ${sa.coverageReport.coverageTool || 'Unknown'}\n\n`;
-        }
-
-        outputText += '---\n\n';
       }
 
-      outputText += '## 🤖 LLM Analysis Prompts\n\n';
-      outputText += 'The following prompts should be executed sequentially using your LLM:\n\n';
-      outputText += '---\n\n';
+      outputText += `---\n\n`;
+      outputText += `## ⚡ LLM Analysis Workflow\n\n`;
+      outputText += `Execute the following ${allPrompts.length} prompts sequentially:\n\n`;
 
+      // List all prompts with clear step numbers
       allPrompts.forEach((prompt, i) => {
-        const stepTitle = {
-          'fileAnalysis': `📄 Step ${i + 1}: File Analysis`,
-          'riskDetection': `⚠️  Step ${i + 1}: Risk Detection`,
-          'summaryGeneration': `📋 Step ${i + 1}: Summary Generation`,
-          'selfRefinement': `✨ Step ${i + 1}: Self Refinement`,
-          'ticketQuality': `🎯 Step ${i + 1}: Ticket Quality Assessment`,
-          'acValidation': `✅ Step ${i + 1}: Acceptance Criteria Validation`,
-          'peerReview': `👥 Step ${i + 1}: Peer Review Analysis`,
-        }[prompt.step] || `Step ${i + 1}`;
+        const stepEmoji = {
+          'fileAnalysis': '📄',
+          'riskDetection': '⚠️',
+          'summaryGeneration': '📋',
+          'selfRefinement': '✨',
+          'ticketQuality': '🎯',
+          'acValidation': '✅',
+          'peerReview': '👥',
+        }[prompt.step] || '🔹';
 
-        outputText += `## ${stepTitle}\n\n`;
-        outputText += `**Instructions:** ${prompt.instructions}\n\n`;
+        outputText += `### ${stepEmoji} Step ${i + 1}: ${prompt.step}\n\n`;
+
+        if (verbose) {
+          outputText += `**Instructions:** ${prompt.instructions}\n\n`;
+        }
+
         outputText += '**Prompt:**\n```\n';
-        outputText += prompt.prompt.substring(0, 50000); // Limit prompt size
-        if (prompt.prompt.length > 50000) {
+        const promptLimit = verbose ? 20000 : 10000;
+        outputText += prompt.prompt.substring(0, promptLimit);
+        if (prompt.prompt.length > promptLimit) {
           outputText += '\n... (truncated for display)\n';
         }
         outputText += '\n```\n\n';
         outputText += '---\n\n';
       });
 
-      outputText += '\n**Note:** These prompts are generated by PR Agent. Execute them sequentially and analyze the results.\n';
+      outputText += `## 💾 Next Steps\n\n`;
+      outputText += `1. Execute all ${allPrompts.length} prompts above sequentially\n`;
+      outputText += `2. Call \`saveAnalysisResults\` with the results\n`;
+      outputText += `3. Present the analysis to the user\n\n`;
 
-      // Auto-start dashboard after returning prompts (same behavior as CLI)
-      try {
-        const dashboardUrl = 'http://localhost:3000';
-
-        // Start dashboard server in background if not already running
-        if (!httpServer) {
-          console.error('[MCP Server] Auto-starting dashboard...');
-
-          // Import and start dashboard (non-blocking)
-          startDashboardInBackground(3000).catch(err => {
-            console.error('[MCP Server] Dashboard auto-start failed:', err.message);
-          });
-
-          // Add dashboard URL to output
-          outputText += `\n\n📊 **Dashboard:** ${dashboardUrl}\n`;
-          outputText += `The dashboard has been started automatically and will open in your browser.\n`;
-        } else {
-          outputText += `\n\n📊 **Dashboard:** http://localhost:${dashboardPort}\n`;
-          outputText += `The dashboard is already running.\n`;
+      if (verbose) {
+        outputText += `**Save parameters:**\n`;
+        outputText += `- title: "${title || 'Untitled'}"\n`;
+        outputText += `- repoOwner: "${repoInfo.owner}"\n`;
+        outputText += `- repoName: "${repoInfo.name}"\n`;
+        outputText += `- complexity: (from summary step)\n`;
+        outputText += `- risksCount: (from risk detection step)\n`;
+        outputText += `- risks: (from risk detection step)\n`;
+        outputText += `- recommendations: (from summary step)\n`;
+        if (peerReviewEnabled) {
+          outputText += `- peerReviewEnabled: true\n`;
+          outputText += `- ticketKey, acCompliancePercentage, etc.: (from peer review steps)\n`;
         }
-      } catch (error: any) {
-        console.error('[MCP Server] Dashboard auto-start failed:', error.message);
-        outputText += '\n\n📊 **Dashboard:** Run `dashboard` tool to view analysis history.\n';
+        outputText += `\n📊 Dashboard: http://localhost:3000\n`;
       }
 
-      // Return formatted output
       return {
         content: [{
           type: 'text' as const,
@@ -793,11 +784,6 @@ Returns formatted analysis for the calling LLM to display and enhance with AI in
     }
   }
 );
-
-/* OLD CODE REMOVED - MCP server now uses PROMPT_ONLY mode
-     Removed old EXECUTE mode logic that is no longer needed
-     (database saving, result property access, etc.)
-*/
 
 /**
  * saveAnalysisResults - Save analysis results to database after LLM execution
@@ -816,6 +802,8 @@ server.tool(
     risksCount: z.number().describe('Number of critical/warning risks'),
     risks: z.array(z.string()).describe('List of risk descriptions'),
     recommendations: z.array(z.string()).describe('List of recommendations'),
+    // Project classification
+    projectClassification: z.string().optional().describe('Project classification (JSON string)'),
     // Peer review fields
     peerReviewEnabled: z.boolean().optional(),
     ticketKey: z.string().optional().describe('Jira ticket key (e.g., TODO-2)'),
@@ -842,6 +830,8 @@ server.tool(
         risks_count: args.risksCount,
         risks: JSON.stringify(args.risks),
         recommendations: JSON.stringify(args.recommendations),
+        // Project classification
+        project_classification: args.projectClassification,
         // Peer review fields
         peer_review_enabled: args.peerReviewEnabled ? 1 : 0,
         ticket_key: args.ticketKey,
