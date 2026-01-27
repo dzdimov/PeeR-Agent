@@ -2,9 +2,16 @@
 /**
  * PR Agent MCP Server
  *
- * MCP server that uses the same PRAnalyzerAgent as the CLI.
- * Uses a StubChatModel to trigger fallback paths in PRAnalyzerAgent,
- * which runs static analysis (semgrep, patterns) and generates default recommendations.
+ * Modular MCP server following SOLID principles and separation of concerns.
+ * This file serves as the entry point and tool registration layer only.
+ * All business logic is delegated to specialized service classes.
+ *
+ * Architecture:
+ * - server.ts (this file): Tool registration and MCP protocol handling
+ * - services/: Stateless service classes (git, diff parsing, formatting, etc.)
+ * - tools/: Tool handler classes (one per MCP tool)
+ * - constants.ts: Centralized configuration and messages
+ * - types.ts: MCP-specific type definitions
  *
  * The calling LLM (Claude Code, Cursor, etc.) provides AI-powered insights
  * after receiving the analysis response.
