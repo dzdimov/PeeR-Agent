@@ -32,6 +32,8 @@ export declare class PRAnalyzerAgent extends BasePRAgentWorkflow {
     analyze(diff: string, title?: string, mode?: AnalysisMode, options?: {
         useArchDocs?: boolean;
         repoPath?: string;
+        repoOwner?: string;
+        repoName?: string;
         language?: string;
         framework?: string;
         enableStaticAnalysis?: boolean;

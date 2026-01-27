@@ -217,8 +217,26 @@ pr-agent analyze --max-cost 10.0
 # Force agent mode for large diffs
 pr-agent analyze --agent
 
+# Show project classification (business logic vs QA)
+pr-agent analyze --show-classification
+
 # Specify PR title manually
 pr-agent analyze --title "Add new authentication system"
+
+# Run test coverage analysis (requires coverage reports)
+pr-agent analyze --scan-coverage
+
+# Display coverage metrics if available
+pr-agent analyze --show-coverage
+
+# Run ESLint static analysis
+pr-agent analyze --show-static-analysis
+
+# Enable Jira peer review integration
+pr-agent analyze --peer-review
+
+# Full analysis with all static analysis features
+pr-agent analyze --full --show-coverage --show-static-analysis
 ```
 
 ### Configuration

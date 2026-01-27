@@ -29,13 +29,13 @@ export declare const UserConfigSchema: z.ZodObject<{
         temperature: z.ZodOptional<z.ZodNumber>;
         maxTokens: z.ZodOptional<z.ZodNumber>;
     }, "strip", z.ZodTypeAny, {
-        model?: string | undefined;
         provider?: "anthropic" | "openai" | "google" | "zhipu" | undefined;
+        model?: string | undefined;
         temperature?: number | undefined;
         maxTokens?: number | undefined;
     }, {
-        model?: string | undefined;
         provider?: "anthropic" | "openai" | "google" | "zhipu" | undefined;
+        model?: string | undefined;
         temperature?: number | undefined;
         maxTokens?: number | undefined;
     }>>;
@@ -51,18 +51,18 @@ export declare const UserConfigSchema: z.ZodObject<{
         language?: string | undefined;
         framework?: string | undefined;
         defaultMode?: "summary" | "complexity" | "risks" | "full" | undefined;
-        maxCost?: number | undefined;
         autoDetectAgent?: boolean | undefined;
-        agentThreshold?: number | undefined;
         enableStaticAnalysis?: boolean | undefined;
+        maxCost?: number | undefined;
+        agentThreshold?: number | undefined;
     }, {
         language?: string | undefined;
         framework?: string | undefined;
         defaultMode?: "summary" | "complexity" | "risks" | "full" | undefined;
-        maxCost?: number | undefined;
         autoDetectAgent?: boolean | undefined;
-        agentThreshold?: number | undefined;
         enableStaticAnalysis?: boolean | undefined;
+        maxCost?: number | undefined;
+        agentThreshold?: number | undefined;
     }>>;
     git: z.ZodOptional<z.ZodObject<{
         defaultBranch: z.ZodOptional<z.ZodEffects<z.ZodString, string, string>>;
@@ -108,9 +108,8 @@ export declare const UserConfigSchema: z.ZodObject<{
         includeTicketDetails: z.ZodOptional<z.ZodBoolean>;
         verbose: z.ZodOptional<z.ZodBoolean>;
     }, "strip", z.ZodTypeAny, {
-        email?: string | undefined;
         provider?: string | undefined;
-        verbose?: boolean | undefined;
+        email?: string | undefined;
         enabled?: boolean | undefined;
         useMcp?: boolean | undefined;
         instanceUrl?: string | undefined;
@@ -119,15 +118,15 @@ export declare const UserConfigSchema: z.ZodObject<{
         acceptanceCriteriaField?: string | undefined;
         storyPointsField?: string | undefined;
         ticketPatterns?: string[] | undefined;
+        verbose?: boolean | undefined;
         analyzeAcceptanceCriteria?: boolean | undefined;
         rateTicketQuality?: boolean | undefined;
         generateTestSuggestions?: boolean | undefined;
         checkScopeCreep?: boolean | undefined;
         includeTicketDetails?: boolean | undefined;
     }, {
-        email?: string | undefined;
         provider?: string | undefined;
-        verbose?: boolean | undefined;
+        email?: string | undefined;
         enabled?: boolean | undefined;
         useMcp?: boolean | undefined;
         instanceUrl?: string | undefined;
@@ -136,6 +135,7 @@ export declare const UserConfigSchema: z.ZodObject<{
         acceptanceCriteriaField?: string | undefined;
         storyPointsField?: string | undefined;
         ticketPatterns?: string[] | undefined;
+        verbose?: boolean | undefined;
         analyzeAcceptanceCriteria?: boolean | undefined;
         rateTicketQuality?: boolean | undefined;
         generateTestSuggestions?: boolean | undefined;
@@ -143,10 +143,15 @@ export declare const UserConfigSchema: z.ZodObject<{
         includeTicketDetails?: boolean | undefined;
     }>>;
 }, "strip", z.ZodTypeAny, {
+    ai?: {
+        provider?: "anthropic" | "openai" | "google" | "zhipu" | undefined;
+        model?: string | undefined;
+        temperature?: number | undefined;
+        maxTokens?: number | undefined;
+    } | undefined;
     peerReview?: {
-        email?: string | undefined;
         provider?: string | undefined;
-        verbose?: boolean | undefined;
+        email?: string | undefined;
         enabled?: boolean | undefined;
         useMcp?: boolean | undefined;
         instanceUrl?: string | undefined;
@@ -155,17 +160,12 @@ export declare const UserConfigSchema: z.ZodObject<{
         acceptanceCriteriaField?: string | undefined;
         storyPointsField?: string | undefined;
         ticketPatterns?: string[] | undefined;
+        verbose?: boolean | undefined;
         analyzeAcceptanceCriteria?: boolean | undefined;
         rateTicketQuality?: boolean | undefined;
         generateTestSuggestions?: boolean | undefined;
         checkScopeCreep?: boolean | undefined;
         includeTicketDetails?: boolean | undefined;
-    } | undefined;
-    ai?: {
-        model?: string | undefined;
-        provider?: "anthropic" | "openai" | "google" | "zhipu" | undefined;
-        temperature?: number | undefined;
-        maxTokens?: number | undefined;
     } | undefined;
     output?: {
         verbose?: boolean | undefined;
@@ -176,27 +176,32 @@ export declare const UserConfigSchema: z.ZodObject<{
         language?: string | undefined;
         framework?: string | undefined;
         defaultMode?: "summary" | "complexity" | "risks" | "full" | undefined;
-        maxCost?: number | undefined;
         autoDetectAgent?: boolean | undefined;
-        agentThreshold?: number | undefined;
         enableStaticAnalysis?: boolean | undefined;
+        maxCost?: number | undefined;
+        agentThreshold?: number | undefined;
+    } | undefined;
+    git?: {
+        defaultBranch?: string | undefined;
+        includeUntracked?: boolean | undefined;
+        excludePatterns?: string[] | undefined;
     } | undefined;
     apiKeys?: {
         anthropic?: string | undefined;
         openai?: string | undefined;
         google?: string | undefined;
         zhipu?: string | undefined;
-    } | undefined;
-    git?: {
-        defaultBranch?: string | undefined;
-        includeUntracked?: boolean | undefined;
-        excludePatterns?: string[] | undefined;
     } | undefined;
 }, {
+    ai?: {
+        provider?: "anthropic" | "openai" | "google" | "zhipu" | undefined;
+        model?: string | undefined;
+        temperature?: number | undefined;
+        maxTokens?: number | undefined;
+    } | undefined;
     peerReview?: {
-        email?: string | undefined;
         provider?: string | undefined;
-        verbose?: boolean | undefined;
+        email?: string | undefined;
         enabled?: boolean | undefined;
         useMcp?: boolean | undefined;
         instanceUrl?: string | undefined;
@@ -205,17 +210,12 @@ export declare const UserConfigSchema: z.ZodObject<{
         acceptanceCriteriaField?: string | undefined;
         storyPointsField?: string | undefined;
         ticketPatterns?: string[] | undefined;
+        verbose?: boolean | undefined;
         analyzeAcceptanceCriteria?: boolean | undefined;
         rateTicketQuality?: boolean | undefined;
         generateTestSuggestions?: boolean | undefined;
         checkScopeCreep?: boolean | undefined;
         includeTicketDetails?: boolean | undefined;
-    } | undefined;
-    ai?: {
-        model?: string | undefined;
-        provider?: "anthropic" | "openai" | "google" | "zhipu" | undefined;
-        temperature?: number | undefined;
-        maxTokens?: number | undefined;
     } | undefined;
     output?: {
         verbose?: boolean | undefined;
@@ -226,21 +226,21 @@ export declare const UserConfigSchema: z.ZodObject<{
         language?: string | undefined;
         framework?: string | undefined;
         defaultMode?: "summary" | "complexity" | "risks" | "full" | undefined;
-        maxCost?: number | undefined;
         autoDetectAgent?: boolean | undefined;
-        agentThreshold?: number | undefined;
         enableStaticAnalysis?: boolean | undefined;
+        maxCost?: number | undefined;
+        agentThreshold?: number | undefined;
+    } | undefined;
+    git?: {
+        defaultBranch?: string | undefined;
+        includeUntracked?: boolean | undefined;
+        excludePatterns?: string[] | undefined;
     } | undefined;
     apiKeys?: {
         anthropic?: string | undefined;
         openai?: string | undefined;
         google?: string | undefined;
         zhipu?: string | undefined;
-    } | undefined;
-    git?: {
-        defaultBranch?: string | undefined;
-        includeUntracked?: boolean | undefined;
-        excludePatterns?: string[] | undefined;
     } | undefined;
 }>;
 /**

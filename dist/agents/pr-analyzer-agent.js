@@ -74,6 +74,11 @@ export class PRAnalyzerAgent extends BasePRAgentWorkflow {
             maxCost: 5.0,
             mode: mode || { summary: true, risks: true, complexity: true },
             archDocs: archDocsContext,
+            config: {
+                repoPath: options?.repoPath,
+                repoOwner: options?.repoOwner,
+                repoName: options?.repoName,
+            },
             language: options?.language,
             framework: options?.framework,
             enableStaticAnalysis: options?.enableStaticAnalysis !== false, // Default to true

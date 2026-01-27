@@ -305,3 +305,287 @@ ${functionNames.map(fn => `// - ${fn}`).join('\n') || '// - Main module function
 `;
     }
 }
+
+/**
+ * Test Enhancement Suggestion - analyzes existing tests and suggests improvements
+ */
+export interface TestEnhancement {
+  testFile: string;
+  sourceFile: string;
+  currentTests: string[];
+  missingScenarios: string[];
+  suggestions: string[];
+  enhancementCode?: string;
+}
+
+/**
+ * Analyze existing test file and suggest enhancements
+ */
+export function analyzeTestQuality(
+  testFile: { path: string; diff: string },
+  sourceFile: { path: string; diff: string },
+  framework: string
+): TestEnhancement {
+  const testContent = testFile.diff;
+  const sourceContent = sourceFile.diff;
+  
+  // Extract existing test cases from the test file
+  const currentTests: string[] = [];
+  const testPatterns = [
+    /(?:test|it|describe)\s*\(\s*['"`]([^'"`]+)['"`]/g,  // Jest/Mocha/Vitest
+    /def\s+test_(\w+)/g,  // Python
+  ];
+  
+  for (const pattern of testPatterns) {
+    let match;
+    while ((match = pattern.exec(testContent)) !== null) {
+      currentTests.push(match[1]);
+    }
+  }
+  
+  // Analyze source code to identify testable scenarios
+  const missingScenarios: string[] = [];
+  const suggestions: string[] = [];
+  
+  // Check for common missing test scenarios
+  
+  // 1. Error handling tests
+  if (sourceContent.includes('throw ') || sourceContent.includes('raise ') || 
+      sourceContent.includes('Error(') || sourceContent.includes('Exception(')) {
+    const hasErrorTests = currentTests.some(t => 
+      /error|exception|throw|fail|invalid/i.test(t)
+    );
+    if (!hasErrorTests) {
+      missingScenarios.push('Error handling tests');
+      suggestions.push('⚠️  Add tests for error conditions and exception handling');
+    }
+  }
+  
+  // 2. Edge case tests
+  const hasEdgeCaseTests = currentTests.some(t => 
+    /edge|boundary|limit|empty|null|zero|max|min/i.test(t)
+  );
+  if (!hasEdgeCaseTests && sourceContent.length > 100) {
+    missingScenarios.push('Edge case tests');
+    suggestions.push('🔍 Add tests for edge cases (null, undefined, empty, boundary values)');
+  }
+  
+  // 3. Async operation tests
+  if ((sourceContent.includes('async ') || sourceContent.includes('await ') || 
+       sourceContent.includes('Promise') || sourceContent.includes('.then(')) &&
+      !testContent.includes('async ')) {
+    missingScenarios.push('Async operation tests');
+    suggestions.push('⏱️  Add async/await tests for asynchronous operations');
+  }
+  
+  // 4. Input validation tests
+  if (sourceContent.includes('validate') || sourceContent.includes('check') || 
+      sourceContent.match(/if\s*\(/)) {
+    const hasValidationTests = currentTests.some(t => 
+      /valid|invalid|check|verify/i.test(t)
+    );
+    if (!hasValidationTests) {
+      missingScenarios.push('Input validation tests');
+      suggestions.push('✅ Add tests for input validation and type checking');
+    }
+  }
+  
+  // 5. Return value tests
+  const hasReturnTests = currentTests.some(t => 
+    /return|result|output|expect/i.test(t)
+  );
+  if (!hasReturnTests && (sourceContent.includes('return ') || sourceContent.includes('yield '))) {
+    missingScenarios.push('Return value verification');
+    suggestions.push('🎯 Add explicit tests for expected return values and types');
+  }
+  
+  // 6. Side effects and state changes
+  if (sourceContent.match(/\.\w+\s*=/g) || sourceContent.includes('setState') || 
+      sourceContent.includes('this.')) {
+    const hasStateTests = currentTests.some(t => 
+      /state|change|update|mutate/i.test(t)
+    );
+    if (!hasStateTests) {
+      missingScenarios.push('State change tests');
+      suggestions.push('🔄 Add tests to verify state changes and side effects');
+    }
+  }
+  
+  // 7. Integration/interaction tests
+  if (sourceContent.includes('import ') && currentTests.length < 3) {
+    suggestions.push('🔗 Consider adding integration tests for component interactions');
+  }
+  
+  // Generate enhancement code suggestions
+  let enhancementCode = '';
+  if (missingScenarios.length > 0) {
+    enhancementCode = generateEnhancementCode(framework, testFile.path, missingScenarios);
+  }
+  
+  return {
+    testFile: testFile.path,
+    sourceFile: sourceFile.path,
+    currentTests,
+    missingScenarios,
+    suggestions,
+    enhancementCode,
+  };
+}
+
+/**
+ * Generate code for test enhancements
+ */
+function generateEnhancementCode(
+  framework: string,
+  testFilePath: string,
+  missingScenarios: string[]
+): string {
+  const baseName = path.basename(testFilePath, path.extname(testFilePath));
+  
+  switch (framework) {
+    case 'jest':
+    case 'vitest':
+      return `
+// === Suggested Test Enhancements ===
+
+${missingScenarios.includes('Error handling tests') ? `
+describe('Error Handling', () => {
+  it('should handle invalid input gracefully', () => {
+    expect(() => functionName(null)).toThrow();
+    expect(() => functionName(undefined)).toThrow();
+  });
+  
+  it('should throw appropriate error for edge cases', () => {
+    expect(() => functionName('')).toThrow('Invalid input');
+  });
+});
+` : ''}
+
+${missingScenarios.includes('Edge case tests') ? `
+describe('Edge Cases', () => {
+  it('should handle empty input', () => {
+    expect(functionName('')).toBe(expectedEmptyResult);
+  });
+  
+  it('should handle null and undefined', () => {
+    expect(functionName(null)).toBe(null);
+    expect(functionName(undefined)).toBe(undefined);
+  });
+  
+  it('should handle boundary values', () => {
+    expect(functionName(0)).toBe(expectedZeroResult);
+    expect(functionName(Number.MAX_VALUE)).toBeDefined();
+  });
+});
+` : ''}
+
+${missingScenarios.includes('Async operation tests') ? `
+describe('Async Operations', () => {
+  it('should resolve successfully', async () => {
+    const result = await asyncFunction();
+    expect(result).toBeDefined();
+  });
+  
+  it('should handle async errors', async () => {
+    await expect(asyncFunction('invalid')).rejects.toThrow();
+  });
+});
+` : ''}
+`;
+
+    case 'mocha':
+      return `
+// === Suggested Test Enhancements ===
+
+${missingScenarios.includes('Error handling tests') ? `
+describe('Error Handling', function() {
+  it('should handle invalid input gracefully', function() {
+    expect(() => functionName(null)).to.throw();
+  });
+});
+` : ''}
+
+${missingScenarios.includes('Edge case tests') ? `
+describe('Edge Cases', function() {
+  it('should handle empty input', function() {
+    expect(functionName('')).to.equal(expectedEmptyResult);
+  });
+  
+  it('should handle boundary values', function() {
+    expect(functionName(0)).to.be.defined;
+  });
+});
+` : ''}
+`;
+
+    case 'pytest':
+    case 'unittest':
+      return `
+# === Suggested Test Enhancements ===
+
+${missingScenarios.includes('Error handling tests') ? `
+def test_error_handling():
+    """Test error handling with invalid inputs."""
+    with pytest.raises(ValueError):
+        function_name(None)
+    with pytest.raises(ValueError):
+        function_name('')
+` : ''}
+
+${missingScenarios.includes('Edge case tests') ? `
+def test_edge_cases():
+    """Test edge cases and boundary conditions."""
+    assert function_name('') == expected_empty_result
+    assert function_name(0) == expected_zero_result
+    assert function_name(None) is None
+` : ''}
+
+${missingScenarios.includes('Async operation tests') ? `
+@pytest.mark.asyncio
+async def test_async_operations():
+    """Test asynchronous operations."""
+    result = await async_function()
+    assert result is not None
+` : ''}
+`;
+
+    default:
+      return `// Consider adding tests for: ${missingScenarios.join(', ')}`;
+  }
+}
+
+/**
+ * Format test enhancement for display
+ */
+export function formatTestEnhancement(enhancement: TestEnhancement): string {
+  let output = `\n### 🔬 Test Enhancement: ${path.basename(enhancement.testFile)}\n\n`;
+  
+  output += `**Source File:** ${enhancement.sourceFile}\n`;
+  output += `**Current Tests:** ${enhancement.currentTests.length} test case(s)\n\n`;
+  
+  if (enhancement.currentTests.length > 0 && enhancement.currentTests.length <= 5) {
+    output += `**Existing Tests:**\n`;
+    enhancement.currentTests.forEach(test => {
+      output += `  ✓ ${test}\n`;
+    });
+    output += `\n`;
+  }
+  
+  if (enhancement.missingScenarios.length > 0) {
+    output += `**Missing Test Scenarios:**\n`;
+    enhancement.missingScenarios.forEach(scenario => {
+      output += `  ⚠️  ${scenario}\n`;
+    });
+    output += `\n`;
+  }
+  
+  if (enhancement.suggestions.length > 0) {
+    output += `**Recommendations:**\n`;
+    enhancement.suggestions.forEach(suggestion => {
+      output += `  ${suggestion}\n`;
+    });
+    output += `\n`;
+  }
+  
+  return output;
+}
