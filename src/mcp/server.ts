@@ -39,6 +39,7 @@ import {
   PeerReviewMode,
   type PeerReviewResult
 } from '../issue-tracker/index.js';
+import { OutputFormatter } from '../utils/output-formatter.js';
 
 // Dashboard server state
 let httpServer: any = null;
@@ -697,21 +698,12 @@ Configuration behavior (same as CLI):
 
       outputText += `## 📊 Static Analysis Results\n\n`;
 
-      // Include static analysis results
+      // Include static analysis results using shared formatter
       if (analysisResult.staticAnalysis) {
-        const sa = analysisResult.staticAnalysis;
-
-        if (sa.projectClassification) {
-          outputText += sa.projectClassification + '\n\n';
-        }
-
-        if (sa.testSuggestions && sa.testSuggestions.length > 0) {
-          outputText += `### 🧪 Test Suggestions (${sa.testSuggestions.length})\n\n`;
-          sa.testSuggestions.forEach((test, i) => {
-            outputText += `**${i + 1}. ${test.forFile}**\n`;
-            outputText += `- Framework: ${test.testFramework}\n`;
-            outputText += `- Suggested path: ${test.testFilePath || 'N/A'}\n\n`;
-          });
+        const formatter = new OutputFormatter({ mode: 'markdown', verbose });
+        const staticAnalysisOutput = formatter.formatStaticAnalysis(analysisResult.staticAnalysis);
+        if (staticAnalysisOutput) {
+          outputText += staticAnalysisOutput + '\n\n';
         }
       }
 
